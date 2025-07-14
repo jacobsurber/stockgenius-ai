@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>StockGenius AI - Enhanced Trading Platform</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a; 
+            color: #e2e8f0; 
+            margin: 0; 
+            padding: 20px; 
+            line-height: 1.6;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 40px;
+            background: linear-gradient(135deg, #1e293b, #0f172a);
+            border-radius: 20px;
+            border: 1px solid #334155;
+        }
+        h1 { 
+            color: #00d4aa; 
+            font-size: 3em; 
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(0, 212, 170, 0.3);
+        }
+        .controls {
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 1px solid #334155;
+        }
+        .control-group {
+            margin: 10px;
+            display: inline-block;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        select {
+            background: #334155;
+            color: white;
+            border: 1px solid #475569;
+            padding: 8px;
+            border-radius: 5px;
+            margin: 5px;
+        }
+        button {
+            background: linear-gradient(135deg, #00d4aa, #4f46e5);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+        }
+        button:hover { opacity: 0.9; }
+        .trade-cards { margin: 20px 0; }
+        .trade-card {
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #00d4aa;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .symbol {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00d4aa;
+            display: inline-block;
+        }
+        .confidence {
+            background: #059669;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            margin-left: 15px;
+            color: white;
+        }
+        .price {
+            font-size: 18px;
+            margin: 10px 0;
+            color: #e2e8f0;
+        }
+        .strategy {
+            color: #94a3b8;
+            margin: 5px 0;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #94a3b8;
+        }
+        .error {
+            background: #dc2626;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .status {
+            background: #059669;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            display: inline-block;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 StockGenius AI</h1>
+            <p>Enhanced AI-Powered Trading Analysis Platform</p>
+            <div class="status">✅ AI Analysis Active | 🔄 Real-time Data | 🎯 Dynamic Watchlists</div>
+        </div>
+
+        <div class="controls">
+            <h3>🎯 Analysis Controls</h3>
+            <div class="control-group">
+                <label>Sectors:</label>
+                <select id="sectors" multiple>
+                    <option value="Technology" selected>Technology</option>
+                    <option value="Healthcare" selected>Healthcare</option>
+                    <option value="Financial">Financial</option>
+                    <option value="Energy">Energy</option>
+                    <option value="Consumer">Consumer</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Risk Tolerance:</label>
+                <select id="risk">
+                    <option value="conservative">Conservative</option>
+                    <option value="moderate" selected>Moderate</option>
+                    <option value="aggressive">Aggressive</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Time Horizon:</label>
+                <select id="timeframe">
+                    <option value="intraday">Intraday</option>
+                    <option value="swing" selected>Swing</option>
+                    <option value="position">Position</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>Max Cards:</label>
+                <select id="maxCards">
+                    <option value="3">3</option>
+                    <option value="5" selected>5</option>
+                    <option value="8">8</option>
+                </select>
+            </div>
+            
+            <button onclick="updateAnalysis()">🔄 Update Analysis</button>
+            <button onclick="loadTradeCards()">📊 Refresh Data</button>
+        </div>
+
+        <div id="results">
+            <div class="loading">🤖 Loading AI-powered analysis...</div>
+        </div>
+    </div>
+
+    <script>
+        async function loadTradeCards() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="loading">🤖 Analyzing markets with AI...</div>';
+
+            try {
+                const sectors = Array.from(document.getElementById('sectors').selectedOptions)
+                    .map(option => option.value);
+                const risk = document.getElementById('risk').value;
+                const timeframe = document.getElementById('timeframe').value;
+                const maxCards = document.getElementById('maxCards').value;
+
+                const params = new URLSearchParams({
+                    sectors: sectors.join(','),
+                    risk: risk,
+                    timeframe: timeframe,
+                    maxCards: maxCards
+                });
+
+                const response = await fetch(`/api/trade-cards?${params}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                displayTradeCards(data);
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        ❌ Error: ${error.message}
+                        <br><small>Note: This demo requires API keys to be configured on the server.</small>
+                    </div>
+                `;
+            }
+        }
+
+        function displayTradeCards(data) {
+            const { json, userPrefs, watchlistInfo } = data;
+            let html = `
+                <h2>📊 AI Trade Recommendations</h2>
+                <p><strong>Watchlist:</strong> ${watchlistInfo.total} symbols from ${userPrefs.sectors.join(', ')} sectors</p>
+                <p><strong>Analysis:</strong> ${userPrefs.analysisDepth} | <strong>Risk:</strong> ${userPrefs.riskTolerance} | <strong>Timeframe:</strong> ${userPrefs.timeHorizon}</p>
+                
+                <div class="trade-cards">
+            `;
+
+            json.cards.forEach(card => {
+                html += `
+                    <div class="trade-card">
+                        <div class="symbol">${card.symbol}</div>
+                        <span class="confidence">${card.confidence}% AI Confidence</span>
+                        <div class="price">$${card.entry.price} → $${card.exits.primary.price.toFixed(2)} Target</div>
+                        <div class="strategy">🤖 ${card.strategyType} | Risk Grade: ${card.riskGrade} | ${card.timeframe}</div>
+                        <p><strong>AI Thesis:</strong> ${card.whyThisTrade.mainThesis}</p>
+                        <p><strong>Key Points:</strong> ${card.whyThisTrade.keyPoints.join(' • ')}</p>
+                        <p><strong>Catalysts:</strong> ${card.whyThisTrade.catalysts.join(', ')}</p>
+                    </div>
+                `;
+            });
+
+            html += `
+                </div>
+                <div style="text-align: center; margin: 30px 0; color: #94a3b8;">
+                    <p>📈 ${json.summary.totalCards} recommendations generated | 
+                    🎯 ${json.summary.highConfidenceCards} high confidence | 
+                    📊 ${json.summary.averageConfidence}% average confidence</p>
+                </div>
+            `;
+
+            document.getElementById('results').innerHTML = html;
+        }
+
+        function updateAnalysis() {
+            loadTradeCards();
+        }
+
+        // Load initial data
+        loadTradeCards();
+    </script>
+</body>
+</html>

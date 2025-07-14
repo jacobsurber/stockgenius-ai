@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockGenius - Dashboard</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <%- include('partials/header') %>
+    
+    <div class="dashboard-container">
+        <!-- Performance Overview -->
+        <div class="performance-overview">
+            <div class="metric-card">
+                <h3>Win Rate</h3>
+                <div class="metric-value"><%= performanceMetrics.winRate %>%</div>
+                <div class="metric-trend positive">+2.3%</div>
+            </div>
+            <div class="metric-card">
+                <h3>Avg Return</h3>
+                <div class="metric-value"><%= performanceMetrics.averageReturn %>%</div>
+                <div class="metric-trend positive">+0.8%</div>
+            </div>
+            <div class="metric-card">
+                <h3>Total Trades</h3>
+                <div class="metric-value"><%= performanceMetrics.totalTrades %></div>
+                <div class="metric-trend neutral">-</div>
+            </div>
+            <div class="metric-card">
+                <h3>Accuracy</h3>
+                <div class="metric-value"><%= performanceMetrics.accuracy %>%</div>
+                <div class="metric-trend positive">+1.2%</div>
+            </div>
+        </div>
+
+        <!-- Enhanced Analysis Controls -->
+        <div class="analysis-controls">
+            <div class="control-section">
+                <h3>Analysis Configuration</h3>
+                
+                <!-- User Preference Controls -->
+                <div class="preference-controls">
+                    <div class="control-group">
+                        <label for="sectors">Sectors:</label>
+                        <select id="sectors" multiple>
+                            <% availableSectors.forEach(sector => { %>
+                                <option value="<%= sector %>" <%= userPrefs.sectors.includes(sector) ? 'selected' : '' %>>
+                                    <%= sector %>
+                                </option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="riskTolerance">Risk Tolerance:</label>
+                        <select id="riskTolerance">
+                            <option value="conservative" <%= userPrefs.riskTolerance === 'conservative' ? 'selected' : '' %>>Conservative</option>
+                            <option value="moderate" <%= userPrefs.riskTolerance === 'moderate' ? 'selected' : '' %>>Moderate</option>
+                            <option value="aggressive" <%= userPrefs.riskTolerance === 'aggressive' ? 'selected' : '' %>>Aggressive</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="timeHorizon">Time Horizon:</label>
+                        <select id="timeHorizon">
+                            <option value="intraday" <%= userPrefs.timeHorizon === 'intraday' ? 'selected' : '' %>>Intraday</option>
+                            <option value="swing" <%= userPrefs.timeHorizon === 'swing' ? 'selected' : '' %>>Swing (1-5 days)</option>
+                            <option value="position" <%= userPrefs.timeHorizon === 'position' ? 'selected' : '' %>>Position (weeks+)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="analysisDepth">Analysis Depth:</label>
+                        <select id="analysisDepth">
+                            <option value="quick" <%= userPrefs.analysisDepth === 'quick' ? 'selected' : '' %>>Quick Scan</option>
+                            <option value="comprehensive" <%= userPrefs.analysisDepth === 'comprehensive' ? 'selected' : '' %>>Comprehensive</option>
+                            <option value="deep" <%= userPrefs.analysisDepth === 'deep' ? 'selected' : '' %>>Deep Analysis</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="maxCards">Max Trade Cards:</label>
+                        <select id="maxCards">
+                            <option value="3" <%= userPrefs.maxCards === 3 ? 'selected' : '' %>>3</option>
+                            <option value="5" <%= userPrefs.maxCards === 5 ? 'selected' : '' %>>5</option>
+                            <option value="8" <%= userPrefs.maxCards === 8 ? 'selected' : '' %>>8</option>
+                            <option value="10" <%= userPrefs.maxCards === 10 ? 'selected' : '' %>>10</option>
+                        </select>
+                    </div>
+                    
+                    <button id="updateAnalysis" class="btn-primary">Update Analysis</button>
+                    <button id="refreshData" class="btn-secondary">Refresh Data</button>
+                </div>
+                
+                <!-- Watchlist Info -->
+                <div class="watchlist-info">
+                    <h4>Current Watchlist</h4>
+                    <p><strong>Total Symbols:</strong> <%= watchlistInfo.total %></p>
+                    <p><strong>Active Sectors:</strong> <%= watchlistInfo.sectors.join(', ') %></p>
+                    <p><strong>Source:</strong> <%= watchlistInfo.source %></p>
+                </div>
+                
+                <div class="analysis-status">
+                    <% if (pipelineStatus && pipelineStatus.success !== undefined) { %>
+                        <div class="status-indicator <%= pipelineStatus.success ? 'success' : 'error' %>">
+                            Last run: <%= pipelineStatus.success ? 'Success' : 'Failed' %>
+                        </div>
+                    <% } else { %>
+                        <div class="status-indicator idle">Ready</div>
+                    <% } %>
+                </div>
+                <button id="trigger-analysis" class="analysis-button">
+                    <span class="button-text">Run Analysis</span>
+                    <span class="loading-spinner" style="display: none;">Running...</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Trade Cards Section -->
+        <div class="trade-cards-section">
+            <div class="section-header">
+                <h2>Today's Trade Cards</h2>
+                <div class="cards-summary">
+                    <%= tradeCards.json.summary.totalCards %> cards | 
+                    <%= tradeCards.json.summary.highConfidenceCards %> high confidence | 
+                    Avg: <%= tradeCards.json.summary.averageConfidence %>%
+                </div>
+            </div>
+
+            <div class="trade-cards-grid">
+                <% tradeCards.json.cards.forEach(card => { %>
+                    <div class="trade-card" data-card-id="<%= card.id %>">
+                        <div class="card-header">
+                            <div class="card-category <%= card.category %>">
+                                <%= card.category.replace('_', ' ').toUpperCase() %>
+                            </div>
+                            <div class="card-confidence">
+                                <div class="confidence-bar">
+                                    <div class="confidence-fill" style="width: <%= card.confidence %>%"></div>
+                                </div>
+                                <span class="confidence-text"><%= card.confidence %>%</span>
+                            </div>
+                        </div>
+
+                        <div class="card-body">
+                            <div class="symbol-info">
+                                <h3 class="symbol"><%= card.symbol %></h3>
+                                <div class="strategy"><%= card.strategyType %></div>
+                            </div>
+
+                            <div class="price-targets">
+                                <div class="price-row">
+                                    <span class="label">Entry:</span>
+                                    <span class="value">$<%= card.entry.price %></span>
+                                </div>
+                                <div class="price-row">
+                                    <span class="label">Target:</span>
+                                    <span class="value target">$<%= card.exits.primary.price %></span>
+                                </div>
+                                <div class="price-row">
+                                    <span class="label">Stop:</span>
+                                    <span class="value stop">$<%= card.exits.stop.price %></span>
+                                </div>
+                            </div>
+
+                            <div class="trade-thesis">
+                                <p><%= card.whyThisTrade.mainThesis %></p>
+                                <div class="key-points">
+                                    <% card.whyThisTrade.keyPoints.slice(0, 2).forEach(point => { %>
+                                        <div class="key-point">• <%= point %></div>
+                                    <% }) %>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card-actions">
+                            <button class="view-details-btn" onclick="viewTradeDetails('<%= card.id %>')">
+                                View Details
+                            </button>
+                            <button class="view-reasoning-btn" onclick="viewAIReasoning('<%= card.id %>')">
+                                AI Reasoning
+                            </button>
+                        </div>
+                    </div>
+                <% }) %>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for detailed view -->
+    <div id="details-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>

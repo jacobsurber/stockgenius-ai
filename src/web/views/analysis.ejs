@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockGenius - Analysis</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <%- include('partials/header') %>
+    
+    <div class="analysis-container">
+        <!-- Analysis Controls -->
+        <div class="analysis-controls-section">
+            <h2>Manual Analysis Controls</h2>
+            
+            <div class="control-panels">
+                <div class="control-panel">
+                    <h3>Quick Analysis</h3>
+                    <div class="control-group">
+                        <label for="quick-symbols">Symbols (comma-separated):</label>
+                        <input type="text" id="quick-symbols" placeholder="NVDA, AAPL, TSLA" value="NVDA, AAPL, MSFT">
+                    </div>
+                    <div class="control-group">
+                        <label for="quick-priority">Priority:</label>
+                        <select id="quick-priority">
+                            <option value="normal">Normal</option>
+                            <option value="high">High</option>
+                            <option value="urgent">Urgent</option>
+                        </select>
+                    </div>
+                    <button id="quick-analysis-btn" class="analysis-button primary">
+                        Run Quick Analysis
+                    </button>
+                </div>
+
+                <div class="control-panel">
+                    <h3>Full Analysis</h3>
+                    <div class="control-group">
+                        <label>AI Modules:</label>
+                        <div class="checkbox-group">
+                            <label><input type="checkbox" name="modules" value="sector" checked> Sector Intelligence</label>
+                            <label><input type="checkbox" name="modules" value="technical" checked> Technical Analysis</label>
+                            <label><input type="checkbox" name="modules" value="risk" checked> Risk Assessment</label>
+                            <label><input type="checkbox" name="modules" value="sentiment" checked> Sentiment Analysis</label>
+                            <label><input type="checkbox" name="modules" value="fusion" checked> Strategic Fusion</label>
+                        </div>
+                    </div>
+                    <button id="full-analysis-btn" class="analysis-button secondary">
+                        Run Full Analysis
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pipeline Status -->
+        <div class="pipeline-status-section">
+            <h2>Pipeline Status</h2>
+            <div id="status-display" class="status-display">
+                <% if (pipelineStatus) { %>
+                    <div class="status-card <%= pipelineStatus.success ? 'success' : 'error' %>">
+                        <div class="status-header">
+                            <h4>Last Execution: <%= pipelineStatus.id %></h4>
+                            <div class="status-badge"><%= pipelineStatus.phase %></div>
+                        </div>
+                        <div class="status-metrics">
+                            <div class="metric">
+                                <span class="label">Symbols Processed:</span>
+                                <span class="value"><%= pipelineStatus.metrics.symbolsProcessed %></span>
+                            </div>
+                            <div class="metric">
+                                <span class="label">Processing Time:</span>
+                                <span class="value"><%= Math.round(pipelineStatus.metrics.processingTimeMs / 1000) %>s</span>
+                            </div>
+                            <div class="metric">
+                                <span class="label">Trades Generated:</span>
+                                <span class="value"><%= pipelineStatus.metrics.tradesGenerated %></span>
+                            </div>
+                            <div class="metric">
+                                <span class="label">Errors:</span>
+                                <span class="value <%= pipelineStatus.metrics.errorsCount > 0 ? 'error' : 'success' %>">
+                                    <%= pipelineStatus.metrics.errorsCount %>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                <% } else { %>
+                    <div class="status-card idle">
+                        <div class="status-header">
+                            <h4>No Recent Executions</h4>
+                            <div class="status-badge">Idle</div>
+                        </div>
+                        <p>No pipeline executions have been run yet.</p>
+                    </div>
+                <% } %>
+            </div>
+        </div>
+
+        <!-- Real-time Log -->
+        <div class="log-section">
+            <h2>Analysis Log</h2>
+            <div id="analysis-log" class="log-container">
+                <div class="log-entry info">
+                    <span class="timestamp">[<%= new Date().toLocaleTimeString() %>]</span>
+                    <span class="message">Analysis system ready</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Indicator -->
+        <div id="progress-modal" class="modal" style="display: none;">
+            <div class="modal-content progress-content">
+                <h3>Analysis in Progress</h3>
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div id="progress-text" class="progress-text">Initializing...</div>
+                </div>
+                <div id="progress-details" class="progress-details"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/analysis.js"></script>
+</body>
+</html>

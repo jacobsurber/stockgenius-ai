@@ -1,0 +1,29 @@
+<nav class="main-nav">
+    <div class="nav-container">
+        <div class="nav-brand">
+            <h1>StockGenius</h1>
+        </div>
+        
+        <div class="nav-links">
+            <a href="/dashboard" class="nav-link <%= typeof currentPath !== 'undefined' && currentPath === '/dashboard' ? 'active' : '' %>">
+                Dashboard
+            </a>
+            <a href="/performance" class="nav-link <%= typeof currentPath !== 'undefined' && currentPath === '/performance' ? 'active' : '' %>">
+                Performance
+            </a>
+            <a href="/analysis" class="nav-link <%= typeof currentPath !== 'undefined' && currentPath === '/analysis' ? 'active' : '' %>">
+                Analysis
+            </a>
+        </div>
+
+        <div class="nav-actions">
+            <div class="status-indicator online">
+                <span class="status-dot"></span>
+                Online
+            </div>
+            <form method="POST" action="/logout" style="display: inline;">
+                <button type="submit" class="logout-btn">Logout</button>
+            </form>
+        </div>
+    </div>
+</nav>

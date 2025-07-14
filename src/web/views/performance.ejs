@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StockGenius - Performance</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <%- include('partials/header') %>
+    
+    <div class="performance-container">
+        <!-- Performance Overview -->
+        <div class="performance-overview">
+            <h2>Performance Overview</h2>
+            <div class="overview-metrics">
+                <div class="metric-large">
+                    <h3>Overall Win Rate</h3>
+                    <div class="metric-value large"><%= performanceData.overview.winRate %>%</div>
+                    <div class="metric-subtitle"><%= performanceData.overview.totalTrades %> total trades</div>
+                </div>
+                <div class="metric-large">
+                    <h3>Average Return</h3>
+                    <div class="metric-value large"><%= performanceData.overview.averageReturn %>%</div>
+                    <div class="metric-subtitle">Per trade</div>
+                </div>
+                <div class="metric-large">
+                    <h3>Sharpe Ratio</h3>
+                    <div class="metric-value large"><%= performanceData.overview.sharpeRatio %></div>
+                    <div class="metric-subtitle">Risk-adjusted</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="charts-section">
+            <div class="chart-container">
+                <h3>Performance Trend</h3>
+                <canvas id="performanceChart" width="400" height="200"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h3>Module Accuracy</h3>
+                <canvas id="moduleChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+
+        <!-- Module Performance -->
+        <div class="module-performance">
+            <h2>AI Module Performance</h2>
+            <div class="module-grid">
+                <% performanceData.modulePerformance.forEach(module => { %>
+                    <div class="module-card">
+                        <div class="module-header">
+                            <h4><%= module.module.toUpperCase() %></h4>
+                            <div class="module-accuracy"><%= module.accuracy %>%</div>
+                        </div>
+                        <div class="module-metrics">
+                            <div class="module-metric">
+                                <span class="metric-label">Accuracy:</span>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: <%= module.accuracy %>%"></div>
+                                </div>
+                                <span class="metric-value"><%= module.accuracy %>%</span>
+                            </div>
+                            <div class="module-metric">
+                                <span class="metric-label">Confidence:</span>
+                                <div class="progress-bar">
+                                    <div class="progress-fill" style="width: <%= module.confidence %>%"></div>
+                                </div>
+                                <span class="metric-value"><%= module.confidence %>%</span>
+                            </div>
+                        </div>
+                    </div>
+                <% }) %>
+            </div>
+        </div>
+
+        <!-- Recent Trades -->
+        <div class="recent-trades">
+            <h2>Recent Trade Outcomes</h2>
+            <div class="trades-table">
+                <div class="table-header">
+                    <div class="col">Symbol</div>
+                    <div class="col">Entry</div>
+                    <div class="col">Exit</div>
+                    <div class="col">Return</div>
+                    <div class="col">Outcome</div>
+                    <div class="col">Date</div>
+                </div>
+                <!-- Mock data for demonstration -->
+                <div class="table-row">
+                    <div class="col">NVDA</div>
+                    <div class="col">$450.50</div>
+                    <div class="col">$468.20</div>
+                    <div class="col gain">+3.9%</div>
+                    <div class="col"><span class="outcome winner">Winner</span></div>
+                    <div class="col">Today</div>
+                </div>
+                <div class="table-row">
+                    <div class="col">AAPL</div>
+                    <div class="col">$185.30</div>
+                    <div class="col">$182.10</div>
+                    <div class="col loss">-1.7%</div>
+                    <div class="col"><span class="outcome loser">Loser</span></div>
+                    <div class="col">Yesterday</div>
+                </div>
+                <div class="table-row">
+                    <div class="col">TSLA</div>
+                    <div class="col">$235.80</div>
+                    <div class="col">$249.15</div>
+                    <div class="col gain">+5.7%</div>
+                    <div class="col"><span class="outcome winner">Winner</span></div>
+                    <div class="col">2 days ago</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Performance Chart
+        const performanceCtx = document.getElementById('performanceChart').getContext('2d');
+        new Chart(performanceCtx, {
+            type: 'line',
+            data: {
+                labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+                datasets: [{
+                    label: 'Win Rate %',
+                    data: [65, 68, 72, <%= performanceData.overview.winRate %>],
+                    borderColor: '#00d4aa',
+                    backgroundColor: 'rgba(0, 212, 170, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                }
+            }
+        });
+
+        // Module Chart
+        const moduleCtx = document.getElementById('moduleChart').getContext('2d');
+        new Chart(moduleCtx, {
+            type: 'bar',
+            data: {
+                labels: [<% performanceData.modulePerformance.forEach((module, index) => { %>'<%= module.module.toUpperCase() %>'<% if (index < performanceData.modulePerformance.length - 1) { %>,<% } %><% }) %>],
+                datasets: [{
+                    label: 'Accuracy %',
+                    data: [<% performanceData.modulePerformance.forEach((module, index) => { %><%= module.accuracy %><% if (index < performanceData.modulePerformance.length - 1) { %>,<% } %><% }) %>],
+                    backgroundColor: '#4f46e5'
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: stockgenius-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+      - ./config/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    environment:
+      - REDIS_REPLICATION_MODE=master
+    networks:
+      - stockgenius-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: stockgenius-redis-ui
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=admin
+    networks:
+      - stockgenius-network
+    depends_on:
+      - redis
+    profiles:
+      - dev
+
+  sqlite-web:
+    image: coleifer/sqlite-web
+    container_name: stockgenius-db-ui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    command: ["sqlite_web", "/data/stockgenius.db", "--host", "0.0.0.0", "--port", "8080"]
+    networks:
+      - stockgenius-network
+    profiles:
+      - dev
+
+  # Optional: Run StockGenius in Docker (for production)
+  stockgenius:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stockgenius-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=/app/data/stockgenius.db
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    networks:
+      - stockgenius-network
+    depends_on:
+      - redis
+    profiles:
+      - production
+
+networks:
+  stockgenius-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
