@@ -4,7 +4,7 @@
  */
 
 import { openAIClient } from '../../config/openai.js';
-import { redisClient } from '../../config/redis.js';
+import { redisClientInstance as redisClient } from '../../config/redis.js';
 import { loggerUtils } from '../../config/logger.js';
 import { DataHub } from '../../api/DataHub.js';
 
@@ -310,20 +310,23 @@ export class EarningsDrift {
     const userPrompt = this.buildUserPrompt(input, patterns);
 
     try {
-      const response = await openAIClient.createChatCompletion({
+      const response = await openAIClient.chat.completions.create({
         model: 'gpt-4-turbo',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        functions: [this.earningsDriftSchema],
-        function_call: { name: 'analyze_earnings_drift' },
+        tools: [{
+          type: 'function',
+          function: this.earningsDriftSchema
+        }],
+        tool_choice: { type: 'function', function: { name: 'analyze_earnings_drift' } },
         temperature: 0.1,
         max_tokens: 1200,
       });
 
-      if (response.choices[0]?.message?.function_call?.arguments) {
-        const analysis = JSON.parse(response.choices[0].message.function_call.arguments);
+      if (response.choices[0]?.message?.tool_calls?.[0]?.function?.arguments) {
+        const analysis = JSON.parse(response.choices[0].message.tool_calls[0].function.arguments);
         return this.validateAndEnhanceAnalysis(analysis, input);
       }
 
@@ -389,8 +392,8 @@ Analyze the provided earnings history and predict the most likely drift pattern 
    * Build user prompt with earnings data
    */
   private buildUserPrompt(input: EarningsDriftInput, patterns: any): string {
-    const recentEarnings = input.historicalEarnings.slice(-8); // Last 8 quarters
-    const recentPriceData = input.historicalPriceData.slice(-8);
+    const recentEarnings = (input.historicalEarnings || []).slice(-8); // Last 8 quarters
+    const recentPriceData = (input.historicalPriceData || []).slice(-8);
 
     // Format historical earnings data
     const earningsHistory = recentEarnings.map((earnings, i) => {
@@ -460,28 +463,28 @@ Consider the current market environment (VIX ${input.marketContext.vixLevel.toFi
     const priceData = input.historicalPriceData;
 
     // Analyze last 3 earnings
-    const last3 = this.analyzePatternWindow(earnings.slice(-3), priceData.slice(-3));
+    const last3 = this.analyzePatternWindow((earnings || []).slice(-3), (priceData || []).slice(-3));
     
     // Analyze last 8 quarters
-    const last8 = this.analyzePatternWindow(earnings.slice(-8), priceData.slice(-8));
+    const last8 = this.analyzePatternWindow((earnings || []).slice(-8), (priceData || []).slice(-8));
     
     // Analyze beat vs miss patterns
-    const beats = earnings.filter(e => e.surprisePercent > 0.05); // >5% beat
-    const misses = earnings.filter(e => e.surprisePercent < -0.05); // >5% miss
-    const meets = earnings.filter(e => Math.abs(e.surprisePercent) <= 0.05); // Within 5%
+    const beats = (earnings || []).filter(e => e.surprisePercent > 0.05); // >5% beat
+    const misses = (earnings || []).filter(e => e.surprisePercent < -0.05); // >5% miss
+    const meets = (earnings || []).filter(e => Math.abs(e.surprisePercent) <= 0.05); // Within 5%
     
-    const beatPriceData = priceData.filter(p => {
-      const earning = earnings.find(e => e.date === p.earningsDate);
+    const beatPriceData = (priceData || []).filter(p => {
+      const earning = (earnings || []).find(e => e.date === p.earningsDate);
       return earning && earning.surprisePercent > 0.05;
     });
     
-    const missPriceData = priceData.filter(p => {
-      const earning = earnings.find(e => e.date === p.earningsDate);
+    const missPriceData = (priceData || []).filter(p => {
+      const earning = (earnings || []).find(e => e.date === p.earningsDate);
       return earning && earning.surprisePercent < -0.05;
     });
     
-    const meetPriceData = priceData.filter(p => {
-      const earning = earnings.find(e => e.date === p.earningsDate);
+    const meetPriceData = (priceData || []).filter(p => {
+      const earning = (earnings || []).find(e => e.date === p.earningsDate);
       return earning && Math.abs(earning.surprisePercent) <= 0.05;
     });
 
@@ -784,8 +787,11 @@ Consider the current market environment (VIX ${input.marketContext.vixLevel.toFi
    */
   private async cacheAnalysis(cacheKey: string, analysis: EarningsDriftOutput): Promise<void> {
     try {
-      await redisClient.setex(cacheKey, this.cacheTimeout, JSON.stringify(analysis));
-      loggerUtils.aiLogger.debug('Earnings drift analysis cached', { cacheKey });
+      const client = redisClient();
+      if (client) {
+        await client.setex(cacheKey, this.cacheTimeout, JSON.stringify(analysis));
+        loggerUtils.aiLogger.debug('Earnings drift analysis cached', { cacheKey });
+      }
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to cache earnings drift analysis', {
         cacheKey,
@@ -799,8 +805,12 @@ Consider the current market environment (VIX ${input.marketContext.vixLevel.toFi
    */
   private async getCachedAnalysis(cacheKey: string): Promise<EarningsDriftOutput | null> {
     try {
-      const cached = await redisClient.get(cacheKey);
-      return cached ? JSON.parse(cached) : null;
+      const client = redisClient();
+      if (client) {
+        const cached = await client.get(cacheKey);
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to retrieve cached earnings drift analysis', {
         cacheKey,

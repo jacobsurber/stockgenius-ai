@@ -759,9 +759,9 @@ export class AlertManager extends EventEmitter {
             await this.triggerAlert({
               type: 'breaking_news',
               severity: analysis.impactAssessment.marketImpact === 'critical' ? 'critical' : rule.threshold.severity,
-              symbol: analysis.affectedSymbols[0] || 'MARKET',
+              symbol: analysis.impactAssessment.affectedSymbols[0] || 'MARKET',
               title: `Breaking News: ${news.headline}`,
-              description: `${analysis.impactAssessment.marketImpact.toUpperCase()} impact expected for ${analysis.affectedSectors.join(', ')}`,
+              description: `${analysis.impactAssessment.marketImpact.toUpperCase()} impact expected for ${analysis.impactAssessment.affectedSectors.join(', ')}`,
               triggerData: { news, analysis },
               source: 'breaking_news_monitor',
               confidence: analysis.impactAssessment.confidence,

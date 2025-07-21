@@ -134,7 +134,7 @@ const initializeOpenAI = () => {
   }
 
   try {
-    openaiClient = new OpenAI({
+    const client = new OpenAI({
       apiKey: env.OPENAI_API_KEY,
       timeout: 60000, // 60 seconds
       maxRetries: 3,
@@ -145,7 +145,7 @@ const initializeOpenAI = () => {
       availableModels: Object.keys(modelConfigs),
     });
 
-    return openaiClient;
+    return client;
   } catch (error) {
     logHelpers.logConfigWarning('Failed to initialize OpenAI client', {
       error: error.message,
@@ -153,6 +153,9 @@ const initializeOpenAI = () => {
     return null;
   }
 };
+
+// Initialize the client immediately
+openaiClient = initializeOpenAI();
 
 /**
  * Model router - selects appropriate model based on use case and requirements
@@ -321,7 +324,7 @@ export class ModelRouter {
 export class AIAnalysisService {
   constructor() {
     this.modelRouter = new ModelRouter();
-    this.client = openaiClient;
+    this.client = this.modelRouter.client;
   }
 
   /**
@@ -403,11 +406,11 @@ export class AIAnalysisService {
       messages: [
         {
           role: 'system',
-          content: 'Analyze the sentiment of financial text and provide a score from -1 (very negative) to 1 (very positive).',
+          content: 'Analyze the sentiment of financial text and provide a JSON response with sentiment score from -1 (very negative) to 1 (very positive).',
         },
         {
           role: 'user',
-          content: `Analyze the sentiment of this ${context}: ${text}`,
+          content: `Analyze the sentiment of this ${context} and respond with JSON: ${text}`,
         },
       ],
       max_tokens: 200,
@@ -495,9 +498,13 @@ export class AIAnalysisService {
 // Export singleton instance
 export const aiService = new AIAnalysisService();
 
+// Export the openAI client instance for direct use
+export const openAIClient = openaiClient;
+
 export default {
   modelConfigs,
   ModelRouter,
   AIAnalysisService,
   aiService,
+  openAIClient,
 };

@@ -353,8 +353,12 @@ export class ProcessingService {
     components: Record<string, any>;
     metrics: Record<string, any>;
   }> {
-    const health = {
-      status: 'healthy' as const,
+    const health: {
+      status: 'healthy' | 'degraded' | 'unhealthy';
+      components: Record<string, any>;
+      metrics: Record<string, any>;
+    } = {
+      status: 'healthy',
       components: {
         processor: 'healthy',
         cache: 'unknown',

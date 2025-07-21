@@ -42,8 +42,10 @@ export interface SocialMetrics extends DataPoint {
 }
 
 export interface NewsData extends DataPoint {
+  id: string;
   title: string;
   summary: string;
+  content: string;
   url: string;
   category: string;
   sentiment: SentimentData;
@@ -91,6 +93,8 @@ export interface BaseCollector {
   isHealthy(): Promise<boolean>;
   getMetrics(): CollectorMetrics;
   updateConfig(config: Partial<CollectorConfig>): void;
+  startAutoCollection(symbols?: string[]): void;
+  stopAutoCollection(): void;
 }
 
 export interface RedditPostData extends DataPoint {

@@ -11,7 +11,8 @@ import TradeCardGenerator from '../trading/TradeCardGenerator.js';
 import PerformanceTracker from '../analytics/PerformanceTracker.js';
 
 // Import data preprocessing services
-import DataPreprocessor from '../services/DataPreprocessor.js';
+import { DataProcessor } from '../preprocessing/DataProcessor.js';
+import { DataType } from '../api/DataHub.js';
 
 // Import collectors
 import RedditCollector from '../collectors/RedditCollector.js';
@@ -19,6 +20,7 @@ import TwitterCollector from '../collectors/TwitterCollector.js';
 import NewsCollector from '../collectors/NewsCollector.js';
 import InsiderTradingCollector from '../collectors/InsiderTradingCollector.js';
 import CongressionalTradingCollector from '../collectors/CongressionalTradingCollector.js';
+import { CollectorConfig } from '../collectors/types.js';
 
 export interface PipelineConfig {
   schedules: {
@@ -154,7 +156,7 @@ export class DailyPipeline {
   private orchestrator: PromptOrchestrator;
   private tradeCardGenerator: TradeCardGenerator;
   private performanceTracker: PerformanceTracker;
-  private dataPreprocessor: DataPreprocessor;
+  private dataPreprocessor: DataProcessor;
   
   // Data collectors
   private redditCollector: RedditCollector;
@@ -182,12 +184,20 @@ export class DailyPipeline {
     this.config = config;
     
     // Initialize preprocessor and collectors
-    this.dataPreprocessor = new DataPreprocessor(dataHub);
-    this.redditCollector = new RedditCollector();
-    this.twitterCollector = new TwitterCollector();
-    this.newsCollector = new NewsCollector();
-    this.insiderTradingCollector = new InsiderTradingCollector();
-    this.congressionalTradingCollector = new CongressionalTradingCollector();
+    this.dataPreprocessor = new DataProcessor();
+    const collectorConfig: CollectorConfig = {
+      enabled: true,
+      updateInterval: 300000, // 5 minutes
+      maxRetries: 3,
+      timeout: 30000,
+      cacheTTL: 300
+    };
+
+    this.redditCollector = new RedditCollector(collectorConfig);
+    this.twitterCollector = new TwitterCollector(collectorConfig);
+    this.newsCollector = new NewsCollector(collectorConfig, dataHub);
+    this.insiderTradingCollector = new InsiderTradingCollector(collectorConfig, dataHub);
+    this.congressionalTradingCollector = new CongressionalTradingCollector(collectorConfig, dataHub);
     
     this.initializeSchedules();
   }
@@ -433,10 +443,18 @@ export class DailyPipeline {
     let totalRecords = 0;
     let successfulRecords = 0;
 
-    loggerUtils.aiLogger.info('Starting data collection phase', {
+    // Update real progress
+    if (this.currentExecution) {
+      this.currentExecution.phase = 'data_collection';
+    }
+    
+    loggerUtils.aiLogger.info('🔄 REAL PROGRESS: Starting data collection phase', {
+      phase: 'data_collection',
       symbolCount: symbols.length,
       mode,
       skipDataCollection: options?.skipDataCollection,
+      sessionId: this.currentExecution?.id,
+      timestamp: new Date().toISOString()
     });
 
     if (options?.skipDataCollection) {
@@ -461,40 +479,56 @@ export class DailyPipeline {
       { name: 'congressional_trading', collector: this.congressionalTradingCollector },
     ];
 
-    for (const symbol of symbols) {
-      let symbolSuccess = false;
-      
-      for (const { name, collector } of collectors) {
-        try {
-          const data = await this.collectSymbolData(collector, symbol, mode);
-          if (data && Object.keys(data).length > 0) {
-            totalRecords++;
-            successfulRecords++;
-            symbolSuccess = true;
-            
-            if (!sourcesCollected.includes(name)) {
-              sourcesCollected.push(name);
-            }
-          }
-        } catch (error) {
-          this.addError('data_collection', name, `Failed to collect ${name} data for ${symbol}: ${(error as Error).message}`, 'medium');
-          
+    // Process symbols in parallel with timeout to speed up collection
+    const symbolPromises = symbols.map(async (symbol) => {
+      try {
+        // Use DataHub directly instead of going through all collectors
+        const data = await Promise.race([
+          this.collectSymbolData(null, symbol, mode),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 10000)) // 10 second timeout
+        ]);
+        
+        if (data && Object.keys(data).length > 0) {
           totalRecords++;
-          if (!sourcesFailed.includes(name)) {
-            sourcesFailed.push(name);
+          successfulRecords++;
+          symbolsCollected.push(symbol);
+          
+          // Mark DataHub as successful source
+          if (!sourcesCollected.includes('datahub')) {
+            sourcesCollected.push('datahub');
           }
         }
-      }
-
-      if (symbolSuccess) {
-        symbolsCollected.push(symbol);
-      } else {
+        return { symbol, success: true, data };
+      } catch (error) {
+        this.addError('data_collection', 'datahub', `Failed to collect data for ${symbol}: ${(error as Error).message}`, 'medium');
+        totalRecords++;
         symbolsFailed.push(symbol);
+        sourcesFailed.push('datahub');
+        return { symbol, success: false, error: (error as Error).message };
       }
+    });
 
-      // Implement delay to respect rate limits
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
+    // Wait for all symbols to complete (or timeout)
+    loggerUtils.aiLogger.info('⏰ WAITING for data collection promises to settle', {
+      totalPromises: symbolPromises.length,
+      timeout: '60 seconds'
+    });
+    
+    const results = await Promise.race([
+      Promise.allSettled(symbolPromises),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Data collection timeout after 60 seconds')), 60000)
+      )
+    ]) as PromiseSettledResult<any>[];
+    
+    loggerUtils.aiLogger.info('✅ REAL PROGRESS: Data collection completed', {
+      phase: 'data_collection_complete',
+      totalSymbols: symbols.length,
+      successfulSymbols: symbolsCollected.length,
+      failedSymbols: symbolsFailed.length,
+      sessionId: this.currentExecution?.id,
+      timestamp: new Date().toISOString()
+    });
 
     const dataQualityScore = totalRecords > 0 ? successfulRecords / totalRecords : 0;
     const success = dataQualityScore >= this.config.failureHandling.partialAnalysisThreshold;
@@ -586,10 +620,22 @@ export class DailyPipeline {
     const analysisErrors: string[] = [];
     let totalConfidence = 0;
     let confidenceCount = 0;
+    
+    // 🔥 CRITICAL FIX: Accumulate actual results instead of discarding them
+    const allFusionResults: any[] = [];
+    const allValidationResults: any[] = [];
 
-    loggerUtils.aiLogger.info('Starting AI analysis phase', {
+    // Update real progress
+    if (this.currentExecution) {
+      this.currentExecution.phase = 'ai_analysis';
+    }
+    
+    loggerUtils.aiLogger.info('🧠 REAL PROGRESS: Starting AI analysis phase', {
+      phase: 'ai_analysis',
       symbolCount: symbols.length,
       moduleCount: modules.length,
+      sessionId: this.currentExecution?.id,
+      timestamp: new Date().toISOString(),
     });
 
     for (const symbol of symbols) {
@@ -599,7 +645,7 @@ export class DailyPipeline {
           symbol,
           requestedModules: modules,
           priority: 'normal',
-          allowFallbacks: true,
+          allowFallbacks: true, // Re-enabled after fixing DataHub timeout issues
           requireValidation: true,
           inputs: await this.prepareModuleInputs(symbol, dataCollectionResult),
         };
@@ -620,12 +666,18 @@ export class DailyPipeline {
           qualityScores[module as AIModuleName] = score;
         });
 
-        // Track confidence
+        // 🔥 CRITICAL FIX: Collect fusion results instead of discarding them
         if (result.results.fusion?.tradeCards) {
+          allFusionResults.push(...result.results.fusion.tradeCards);
           result.results.fusion.tradeCards.forEach((card: any) => {
             totalConfidence += card.header.confidence;
             confidenceCount++;
           });
+        }
+        
+        // 🔥 CRITICAL FIX: Collect validation results
+        if (result.results.validator) {
+          allValidationResults.push(result.results.validator);
         }
 
         this.currentExecution!.metrics.apiCallsTotal += result.execution_metadata.apiCallsTotal;
@@ -646,6 +698,8 @@ export class DailyPipeline {
       modulesExecuted: Object.values(modulesExecuted).filter(Boolean).length,
       averageConfidence,
       errorsCount: analysisErrors.length,
+      fusionResultsCount: allFusionResults.length,
+      validationResultsCount: allValidationResults.length,
     });
 
     return {
@@ -656,6 +710,13 @@ export class DailyPipeline {
       averageConfidence,
       qualityScores,
       analysisErrors,
+      // 🔥 CRITICAL FIX: Return the actual results
+      results: {
+        fusion: {
+          tradeCards: allFusionResults
+        },
+        validator: allValidationResults.length > 0 ? allValidationResults[0] : null
+      }
     };
   }
 
@@ -665,13 +726,23 @@ export class DailyPipeline {
   private async executeTradeGeneration(aiAnalysisResult: any): Promise<any> {
     const startTime = Date.now();
     
-    loggerUtils.aiLogger.info('Starting trade generation phase');
+    // Update real progress 
+    if (this.currentExecution) {
+      this.currentExecution.phase = 'trade_generation';
+    }
+    
+    loggerUtils.aiLogger.info('💎 REAL PROGRESS: Starting trade generation phase', {
+      phase: 'trade_generation', 
+      sessionId: this.currentExecution?.id,
+      timestamp: new Date().toISOString(),
+      fusionResultsAvailable: !!(aiAnalysisResult?.results?.fusion?.tradeCards),
+      fusionResultsCount: aiAnalysisResult?.results?.fusion?.tradeCards?.length || 0
+    });
 
     try {
-      // This would integrate with actual AI results from the analysis phase
-      // For now, we'll create a placeholder structure
-      const fusionResults = []; // Would get from aiAnalysisResult
-      const validationResults = []; // Would get from aiAnalysisResult
+      // Extract actual AI results from the analysis phase
+      const fusionResults = aiAnalysisResult?.results?.fusion?.tradeCards || [];
+      const validationResults = aiAnalysisResult?.results?.validator ? [aiAnalysisResult.results.validator] : [];
       const marketContext = {
         vixLevel: 20,
         marketTrend: 'neutral',
@@ -679,11 +750,26 @@ export class DailyPipeline {
         timeOfDay: 'post_market',
       };
 
+      loggerUtils.aiLogger.info('🎯 REAL PROGRESS: Calling TradeCardGenerator.generateDailyCards', {
+        phase: 'calling_trade_generator',
+        fusionResultsLength: fusionResults.length,
+        validationResultsLength: validationResults.length,
+        sessionId: this.currentExecution?.id,
+        timestamp: new Date().toISOString()
+      });
+
       const tradeCards = await this.tradeCardGenerator.generateDailyCards(
         fusionResults,
         validationResults,
         marketContext
       );
+      
+      loggerUtils.aiLogger.info('🎉 REAL PROGRESS: TradeCardGenerator completed', {
+        phase: 'trade_generator_complete',
+        cardsGenerated: tradeCards.json.cards.length,
+        sessionId: this.currentExecution?.id,
+        timestamp: new Date().toISOString()
+      });
 
       const cardsGenerated = tradeCards.json.cards.length;
       const highConvictionCount = tradeCards.json.summary.highConfidenceCards;
@@ -901,41 +987,89 @@ export class DailyPipeline {
    * Helper methods
    */
   private async collectSymbolData(collector: any, symbol: string, mode: string): Promise<any> {
-    // This would call the appropriate collector method based on the collector type
-    // For now, we'll return a placeholder
-    return {
-      symbol,
-      data: `${collector.constructor.name} data for ${symbol}`,
-      timestamp: Date.now(),
-    };
+    try {
+      // Use DataHub to collect real market data for the symbol
+      const dataRequest = {
+        symbol,
+        dataTypes: ['quote', 'technical', 'news'] as DataType[],
+        options: {
+          maxAge: 5 * 60 * 1000, // 5 minutes
+          fallbackEnabled: true
+        }
+      };
+
+      const response = await this.dataHub.fetchData(dataRequest);
+      
+      return {
+        symbol,
+        quote: response.data.quote || null,
+        historical: response.data.technical || null,
+        news: response.data.news || [],
+        timestamp: Date.now(),
+        sources: response.metadata.sources || {}
+      };
+    } catch (error) {
+      loggerUtils.aiLogger.warn(`Failed to collect data for ${symbol}`, { error: error.message });
+      return {
+        symbol,
+        quote: null,
+        historical: null,
+        news: [],
+        timestamp: Date.now(),
+        error: error.message
+      };
+    }
   }
 
   private async prepareModuleInputs(symbol: string, dataCollectionResult: any): Promise<any> {
-    // This would prepare the inputs for each AI module based on collected data
-    // For now, we'll return placeholder inputs
+    const { quote, historical, news } = dataCollectionResult;
+    
+    // Determine sector based on symbol mapping
+    const sectorMapping = this.getSectorForSymbol(symbol);
+    
     return {
       sector: {
         symbol,
-        sector_classification: 'technology',
-        recent_news: [],
-        macro_indicators: {},
+        sector_classification: sectorMapping,
+        recent_news: news || [],
+        macro_indicators: {
+          current_price: quote?.price || 0,
+          volume: quote?.volume || 0,
+          market_cap: quote?.marketCap || 0
+        },
         peer_data: [],
       },
       risk: {
         symbol,
         timeHorizon: '1-3 days',
         tradeDirection: 'long',
-        avgDailyVolume: 1000000,
-        recentVolume5d: 1200000,
-        bidAskSpread: 0.001,
-        historicalVol30d: 0.25,
-        currentPrice: 100,
+        avgDailyVolume: quote?.avgVolume || 1000000,
+        recentVolume5d: quote?.volume || 1200000,
+        bidAskSpread: quote?.bidAskSpread || 0.001,
+        historicalVol30d: quote?.volatility || 0.25,
+        currentPrice: quote?.price || 100,
         marketContext: {
           vixLevel: 20,
           marketTrend: 'neutral',
         },
       },
-      // ... other module inputs
+      technical: {
+        symbol,
+        price_data: historical || [],
+        current_price: quote?.price || 0,
+        volume: quote?.volume || 0,
+        indicators: {}
+      },
+      reddit: {
+        symbol,
+        social_data: [],
+        sentiment_keywords: []
+      },
+      earningsDrift: {
+        symbol,
+        earnings_data: [],
+        price_data: historical || []
+      }
     };
   }
 
@@ -1004,6 +1138,27 @@ export class DailyPipeline {
       type: notification.type,
       urgency: notification.urgency,
     });
+  }
+
+  /**
+   * Get sector classification for a symbol
+   */
+  private getSectorForSymbol(symbol: string): string {
+    const sectorMap: Record<string, string> = {
+      'AAPL': 'technology', 'MSFT': 'technology', 'GOOGL': 'technology', 'AMZN': 'technology', 
+      'META': 'technology', 'NVDA': 'technology', 'TSLA': 'technology', 'NFLX': 'technology',
+      'ADBE': 'technology', 'CRM': 'technology', 'ORCL': 'technology', 'INTC': 'technology', 'AMD': 'technology',
+      'JPM': 'finance', 'BAC': 'finance', 'WFC': 'finance', 'GS': 'finance', 'MS': 'finance', 
+      'C': 'finance', 'V': 'finance', 'MA': 'finance', 'AXP': 'finance', 'COF': 'finance', 'SCHW': 'finance',
+      'JNJ': 'healthcare', 'PFE': 'healthcare', 'UNH': 'healthcare', 'MRNA': 'healthcare', 'ABBV': 'healthcare',
+      'XOM': 'energy', 'CVX': 'energy', 'COP': 'energy', 'EOG': 'energy', 'SLB': 'energy',
+      'HD': 'consumer_discretionary', 'NKE': 'consumer_discretionary', 'MCD': 'consumer_discretionary', 'SBUX': 'consumer_discretionary',
+      'PG': 'consumer_staples', 'KO': 'consumer_staples', 'PEP': 'consumer_staples', 'WMT': 'consumer_staples',
+      'BA': 'industrials', 'CAT': 'industrials', 'GE': 'industrials', 'UNP': 'industrials',
+      'NEE': 'utilities', 'SO': 'utilities', 'DUK': 'utilities'
+    };
+    
+    return sectorMap[symbol] || 'technology'; // Default to technology
   }
 
   /**

@@ -1,0 +1,12 @@
+node_modules
+.env.local
+.env.development
+.env.test
+logs/
+*.log
+.DS_Store
+src/
+scripts/
+*.md
+.git/
+.gitignore

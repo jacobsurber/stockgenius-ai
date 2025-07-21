@@ -38,8 +38,10 @@ export interface ParsedFiling {
 
 export class SECEdgarClient extends BaseClient {
   private readonly companyTickersUrl = '/files/company_tickers.json';
+  private readonly companyTickersExchangeUrl = '/files/company_tickers_exchange.json';
   private readonly submissionsBaseUrl = '/submissions';
   private readonly archivesBaseUrl = '/Archives/edgar/data';
+  private readonly factsBaseUrl = '/api/xbrl/companyfacts';
 
   constructor(config: BaseClientConfig) {
     super(config);
@@ -50,18 +52,44 @@ export class SECEdgarClient extends BaseClient {
    */
   async getCIKFromTicker(ticker: string): Promise<string | null> {
     try {
-      const tickers = await this.get(this.companyTickersUrl, {}, {
-        cacheTTL: 86400 * 7, // Cache for 7 days
-      });
-
       const tickerUpper = ticker.toUpperCase();
       
-      // Search through the tickers data
-      for (const [key, company] of Object.entries(tickers)) {
-        const companyData = company as any;
-        if (companyData.ticker === tickerUpper) {
-          // CIK needs to be padded with zeros to 10 digits
-          return companyData.cik_str.toString().padStart(10, '0');
+      // Try both ticker files - the exchange file is more comprehensive
+      const sources = [
+        { url: this.companyTickersExchangeUrl, isExchange: true },
+        { url: this.companyTickersUrl, isExchange: false }
+      ];
+      
+      for (const source of sources) {
+        try {
+          const tickers = await this.get(source.url, {}, {
+            cacheTTL: 86400 * 7, // Cache for 7 days
+            timeout: 15000,
+          });
+
+          if (source.isExchange) {
+            // Exchange format: { "data": [["cik", "name", "ticker", "exchange"], ...], "fields": [...] }
+            if (tickers.data && Array.isArray(tickers.data)) {
+              for (const row of tickers.data) {
+                if (row[2] === tickerUpper) { // ticker is at index 2
+                  return row[0].toString().padStart(10, '0'); // CIK is at index 0
+                }
+              }
+            }
+          } else {
+            // Original format: { "0": { "cik_str": ..., "ticker": ..., "title": ... }, ... }
+            for (const [key, company] of Object.entries(tickers)) {
+              const companyData = company as any;
+              if (companyData.ticker === tickerUpper) {
+                return companyData.cik_str.toString().padStart(10, '0');
+              }
+            }
+          }
+        } catch (sourceError) {
+          loggerUtils.apiLogger.warn(`Failed to fetch from ${source.url}`, {
+            error: sourceError.message
+          });
+          continue;
         }
       }
 
@@ -466,17 +494,129 @@ export class SECEdgarClient extends BaseClient {
   }
 
   /**
-   * Validate connection by checking if we can access the tickers file
+   * Get company facts (financial data) using newer API
+   */
+  async getCompanyFacts(ticker: string): Promise<any> {
+    try {
+      const cik = await this.getCIKFromTicker(ticker);
+      if (!cik) {
+        throw new Error(`CIK not found for ticker: ${ticker}`);
+      }
+
+      const facts = await this.get(`${this.factsBaseUrl}/CIK${cik}.json`, {}, {
+        cacheTTL: 3600 * 6, // 6 hour cache
+        timeout: 20000,
+      });
+
+      return {
+        cik,
+        entityName: facts.entityName,
+        facts: facts.facts,
+        extractedFacts: this.extractKeyFacts(facts.facts)
+      };
+    } catch (error) {
+      loggerUtils.apiLogger.error('Error fetching company facts', {
+        ticker,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Extract key financial metrics from facts data
+   */
+  private extractKeyFacts(facts: any): any {
+    const extracted: any = {};
+    
+    try {
+      // US GAAP facts
+      const usGaap = facts['us-gaap'] || {};
+      const dei = facts['dei'] || {};
+      
+      // Revenue
+      const revenue = usGaap['Revenues'] || usGaap['RevenueFromContractWithCustomerExcludingAssessedTax'];
+      if (revenue?.units?.USD) {
+        const revenueData = Object.values(revenue.units.USD).slice(-4); // Last 4 periods
+        extracted.revenue = revenueData.map((r: any) => ({
+          value: r.val,
+          period: r.end,
+          form: r.form
+        }));
+      }
+      
+      // Net Income
+      const netIncome = usGaap['NetIncomeLoss'];
+      if (netIncome?.units?.USD) {
+        const incomeData = Object.values(netIncome.units.USD).slice(-4);
+        extracted.netIncome = incomeData.map((i: any) => ({
+          value: i.val,
+          period: i.end,
+          form: i.form
+        }));
+      }
+      
+      // Assets
+      const assets = usGaap['Assets'];
+      if (assets?.units?.USD) {
+        const assetsData = Object.values(assets.units.USD).slice(-4);
+        extracted.assets = assetsData.map((a: any) => ({
+          value: a.val,
+          period: a.end,
+          form: a.form
+        }));
+      }
+      
+      // Shares Outstanding
+      const shares = usGaap['CommonStockSharesOutstanding'] || usGaap['WeightedAverageNumberOfSharesOutstandingBasic'];
+      if (shares?.units?.shares) {
+        const sharesData = Object.values(shares.units.shares).slice(-4);
+        extracted.sharesOutstanding = sharesData.map((s: any) => ({
+          value: s.val,
+          period: s.end,
+          form: s.form
+        }));
+      }
+      
+      // Entity info
+      if (dei['EntityCommonStockSharesOutstanding']?.units?.shares) {
+        const entityShares = Object.values(dei['EntityCommonStockSharesOutstanding'].units.shares).slice(-1)[0] as any;
+        extracted.currentShares = entityShares?.val;
+      }
+      
+    } catch (error) {
+      loggerUtils.apiLogger.warn('Error extracting key facts', { error: error.message });
+    }
+    
+    return extracted;
+  }
+
+  /**
+   * Validate connection by checking if we can access the tickers files
    */
   async validateConnection(): Promise<boolean> {
     try {
-      await this.get(this.companyTickersUrl, {}, { 
+      // Try the newer exchange file first
+      await this.get(this.companyTickersExchangeUrl, {}, { 
         skipCache: true,
-        timeout: 10000,
+        timeout: 15000,
       });
       return true;
     } catch (error) {
-      return false;
+      try {
+        // Fallback to original file
+        await this.get(this.companyTickersUrl, {}, { 
+          skipCache: true,
+          timeout: 10000,
+        });
+        return true;
+      } catch (fallbackError) {
+        loggerUtils.apiLogger.error('SEC Edgar connection validation failed', {
+          primaryError: error.message,
+          fallbackError: fallbackError.message
+        });
+        return false;
+      }
     }
   }
 }

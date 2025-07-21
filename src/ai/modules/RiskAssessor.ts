@@ -4,7 +4,7 @@
  */
 
 import { openAIClient } from '../../config/openai.js';
-import { redisClient } from '../../config/redis.js';
+import { redisClientInstance as redisClient } from '../../config/redis.js';
 import { loggerUtils } from '../../config/logger.js';
 import { DataHub } from '../../api/DataHub.js';
 
@@ -276,20 +276,23 @@ export class RiskAssessor {
     const userPrompt = this.buildUserPrompt(input);
 
     try {
-      const response = await openAIClient.createChatCompletion({
+      const response = await openAIClient.chat.completions.create({
         model: 'gpt-4-turbo',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        functions: [this.riskAssessmentSchema],
-        function_call: { name: 'assess_trading_risk' },
+        tools: [{
+          type: 'function',
+          function: this.riskAssessmentSchema
+        }],
+        tool_choice: { type: 'function', function: { name: 'assess_trading_risk' } },
         temperature: 0.1,
         max_tokens: 1500,
       });
 
-      if (response.choices[0]?.message?.function_call?.arguments) {
-        const assessment = JSON.parse(response.choices[0].message.function_call.arguments);
+      if (response.choices[0]?.message?.tool_calls?.[0]?.function?.arguments) {
+        const assessment = JSON.parse(response.choices[0].message.tool_calls[0].function.arguments);
         return this.validateAndEnhanceAssessment(assessment, input);
       }
 
@@ -704,8 +707,11 @@ Provide comprehensive risk analysis with specific risk scores for each category,
    */
   private async cacheAssessment(cacheKey: string, assessment: RiskAssessmentOutput): Promise<void> {
     try {
-      await redisClient.setex(cacheKey, this.cacheTimeout, JSON.stringify(assessment));
-      loggerUtils.aiLogger.debug('Risk assessment cached', { cacheKey });
+      const client = redisClient();
+      if (client) {
+        await client.setex(cacheKey, this.cacheTimeout, JSON.stringify(assessment));
+        loggerUtils.aiLogger.debug('Risk assessment cached', { cacheKey });
+      }
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to cache risk assessment', {
         cacheKey,
@@ -719,8 +725,12 @@ Provide comprehensive risk analysis with specific risk scores for each category,
    */
   private async getCachedAssessment(cacheKey: string): Promise<RiskAssessmentOutput | null> {
     try {
-      const cached = await redisClient.get(cacheKey);
-      return cached ? JSON.parse(cached) : null;
+      const client = redisClient();
+      if (client) {
+        const cached = await client.get(cacheKey);
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to retrieve cached assessment', {
         cacheKey,

@@ -1,21 +1,20 @@
 /**
  * StockGenius Web Interface Launcher
- * Main entry point for the web application
+ * Main entry point for the web application with new architecture
  */
 
 import StockGeniusWebServer, { WebConfig } from './server.js';
+import { registerServices, initializeCriticalServices, shutdownServices } from '../core/ServiceRegistry.js';
+import { serviceContainer } from '../core/ServiceContainer.js';
 import { DataHub } from '../api/DataHub.js';
-import TradeCardGenerator from '../trading/TradeCardGenerator.js';
-import PerformanceTracker from '../analytics/PerformanceTracker.js';
-import DailyPipeline from '../automation/DailyPipeline.js';
-import PromptOrchestrator from '../ai/PromptOrchestrator.js';
+import { AnalysisController } from '../api/AnalysisController.js';
 import { loggerUtils } from '../config/logger.js';
 
 async function createWebInterface(): Promise<StockGeniusWebServer> {
   try {
     // Web server configuration
     const webConfig: WebConfig = {
-      port: parseInt(process.env.WEB_PORT || '3000'),
+      port: parseInt(process.env.WEB_PORT || '8080'),
       auth: {
         username: process.env.WEB_USERNAME || 'admin',
         password: process.env.WEB_PASSWORD || 'stockgenius2024',
@@ -27,79 +26,23 @@ async function createWebInterface(): Promise<StockGeniusWebServer> {
       }
     };
 
-    // Initialize core services
-    loggerUtils.aiLogger.info('Initializing StockGenius web interface');
+    // Initialize new service architecture
+    loggerUtils.aiLogger.info('Initializing StockGenius web interface with new architecture');
 
-    const dataHub = new DataHub();
-    await dataHub.initialize();
+    // Register all services
+    await registerServices();
+    
+    // Initialize critical services
+    await initializeCriticalServices();
 
-    // Initialize AI orchestrator
-    const promptOrchestrator = new PromptOrchestrator(dataHub);
-
-    // Initialize trade card generator
-    const tradeCardGenerator = new TradeCardGenerator(dataHub);
-
-    // Initialize performance tracker
-    const performanceTracker = new PerformanceTracker(dataHub);
-
-    // Initialize daily pipeline with configuration
-    const pipelineConfig = {
-      schedules: {
-        preMarket: '30 8 * * 1-5',   // 8:30 AM weekdays
-        midDay: '0 12 * * 1-5',      // 12:00 PM weekdays
-        postMarket: '30 16 * * 1-5', // 4:30 PM weekdays
-        weekend: '0 10 * * 6'        // 10:00 AM Saturday
-      },
-      watchlist: [
-        'NVDA', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NFLX',
-        'SPY', 'QQQ', 'IWM', 'AMD', 'INTC', 'CRM', 'ADBE', 'ORCL'
-      ],
-      notifications: {
-        enabled: true,
-        webhookUrl: process.env.WEBHOOK_URL,
-        emailConfig: {
-          enabled: false,
-          recipients: [],
-          smtpConfig: {}
-        },
-        slackConfig: {
-          enabled: false,
-          webhookUrl: '',
-          channel: ''
-        }
-      },
-      failureHandling: {
-        maxRetries: 3,
-        backoffMultiplier: 2,
-        partialAnalysisThreshold: 0.6,
-        fallbackSymbols: ['SPY', 'QQQ', 'NVDA', 'AAPL', 'MSFT']
-      },
-      marketHours: {
-        timezone: 'America/New_York',
-        tradingHours: {
-          start: '09:30',
-          end: '16:00'
-        },
-        holidays: [] // Add market holidays as needed
-      }
-    };
-
-    const dailyPipeline = new DailyPipeline(
-      dataHub,
-      promptOrchestrator,
-      tradeCardGenerator,
-      performanceTracker,
-      pipelineConfig
-    );
-
-    // Create web server
+    // Get services from container
+    const dataHub = await serviceContainer.get<DataHub>('dataHub');
+    const analysisController = await serviceContainer.get<AnalysisController>('analysisController');
+    // Create web server with new architecture
     const webServer = new StockGeniusWebServer(
       webConfig,
-      dataHub,
-      tradeCardGenerator,
-      performanceTracker,
-      dailyPipeline,
-      promptOrchestrator
+      analysisController,
+      serviceContainer
     );
 
     loggerUtils.aiLogger.info('StockGenius web interface initialized successfully');
@@ -124,16 +67,18 @@ async function startWebInterface(): Promise<void> {
       environment: process.env.NODE_ENV || 'development'
     });
 
-    // Graceful shutdown
+    // Graceful shutdown with service cleanup
     process.on('SIGINT', async () => {
       loggerUtils.aiLogger.info('Received SIGINT, shutting down gracefully');
       await webServer.stop();
+      await shutdownServices();
       process.exit(0);
     });
 
     process.on('SIGTERM', async () => {
       loggerUtils.aiLogger.info('Received SIGTERM, shutting down gracefully');
       await webServer.stop();
+      await shutdownServices();
       process.exit(0);
     });
 

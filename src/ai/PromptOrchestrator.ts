@@ -6,7 +6,7 @@
 import sqlite3 from 'sqlite3';
 import { Database, open } from 'sqlite';
 import { openAIClient } from '../config/openai.js';
-import { redisClient } from '../config/redis.js';
+import { redisClientInstance as redisClient } from '../config/redis.js';
 import { loggerUtils } from '../config/logger.js';
 import { DataHub } from '../api/DataHub.js';
 import path from 'path';
@@ -17,6 +17,7 @@ import RiskAssessor, { RiskAssessmentInput, RiskAssessmentOutput } from './modul
 import TechnicalTiming, { TechnicalTimingInput, TechnicalTimingOutput } from './modules/TechnicalTiming.js';
 import RedditNLP, { RedditNLPInput, RedditNLPOutput } from './modules/RedditNLP.js';
 import EarningsDrift, { EarningsDriftInput, EarningsDriftOutput } from './modules/EarningsDrift.js';
+import AnomalyExplainer, { AnomalyExplainerInput, AnomalyExplainerOutput } from './modules/AnomalyExplainer.js';
 import StrategicFusion, { StrategicFusionInput, StrategicFusionOutput, TradeCard } from './StrategicFusion.js';
 import TradeValidator, { ValidationInput, ValidationOutput } from './TradeValidator.js';
 
@@ -81,6 +82,7 @@ export interface OrchestrationInput {
     technical?: TechnicalTimingInput;
     reddit?: RedditNLPInput;
     earningsDrift?: EarningsDriftInput;
+    anomaly?: AnomalyExplainerInput;
     fusion?: Partial<StrategicFusionInput>;
     validator?: Partial<ValidationInput>;
   };
@@ -100,6 +102,7 @@ export interface OrchestrationOutput {
     technical?: TechnicalTimingOutput;
     reddit?: RedditNLPOutput;
     earningsDrift?: EarningsDriftOutput;
+    anomaly?: AnomalyExplainerOutput;
     fusion?: StrategicFusionOutput;
     validator?: ValidationOutput;
   };
@@ -349,10 +352,37 @@ export class PromptOrchestrator {
     const completedModules: AIModuleName[] = [];
     const failedModules: AIModuleName[] = [];
     const results: any = {};
-    const executionTimes: Record<AIModuleName, number> = {};
-    const retryAttempts: Record<AIModuleName, number> = {};
+    const executionTimes: Record<AIModuleName, number> = {
+      reddit: 0,
+      sector: 0,
+      technical: 0,
+      risk: 0,
+      earningsDrift: 0,
+      anomaly: 0,
+      fusion: 0,
+      validator: 0
+    };
+    const retryAttempts: Record<AIModuleName, number> = {
+      reddit: 0,
+      sector: 0,
+      technical: 0,
+      risk: 0,
+      earningsDrift: 0,
+      anomaly: 0,
+      fusion: 0,
+      validator: 0
+    };
     const fallbacksUsed: AIModuleName[] = [];
-    const qualityScores: Record<AIModuleName, number> = {};
+    const qualityScores: Record<AIModuleName, number> = {
+      reddit: 0,
+      sector: 0,
+      technical: 0,
+      risk: 0,
+      earningsDrift: 0,
+      anomaly: 0,
+      fusion: 0,
+      validator: 0
+    };
     const issues: any[] = [];
     
     let totalApiCalls = 0;
@@ -625,7 +655,7 @@ export class PromptOrchestrator {
 
     return {
       success: false,
-      error: lastError,
+      error: lastError || 'Unknown error',
       attempts,
       usedFallback,
     };
@@ -981,12 +1011,39 @@ export class PromptOrchestrator {
       results: {},
       execution_metadata: {
         totalProcessingTime: Date.now() - startTime,
-        moduleExecutionTimes: {},
-        retryAttempts: {},
+        moduleExecutionTimes: {
+          reddit: 0,
+          sector: 0,
+          technical: 0,
+          risk: 0,
+          earningsDrift: 0,
+          anomaly: 0,
+          fusion: 0,
+          validator: 0
+        },
+        retryAttempts: {
+          reddit: 0,
+          sector: 0,
+          technical: 0,
+          risk: 0,
+          earningsDrift: 0,
+          anomaly: 0,
+          fusion: 0,
+          validator: 0
+        },
         fallbacksUsed: [],
         apiCallsTotal: 0,
         tokensUsedTotal: 0,
-        qualityScores: {},
+        qualityScores: {
+          reddit: 0,
+          sector: 0,
+          technical: 0,
+          risk: 0,
+          earningsDrift: 0,
+          anomaly: 0,
+          fusion: 0,
+          validator: 0
+        },
       },
       audit_trail: auditTrail,
       issues: [{

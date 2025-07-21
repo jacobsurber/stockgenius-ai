@@ -532,6 +532,9 @@ export const healthCheck = async () => {
   }
 };
 
+// Export the redis client instance for direct use  
+export const redisClientInstance = getRedisClient;
+
 export default {
   initRedis,
   getRedisClient,
@@ -543,4 +546,5 @@ export default {
   queueUtils,
   healthCheck,
   redisConfig,
+  redisClient: redisClientInstance,
 };

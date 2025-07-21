@@ -4,7 +4,7 @@
  */
 
 import { openAIClient } from '../../config/openai.js';
-import { redisClient } from '../../config/redis.js';
+import { redisClientInstance as redisClient } from '../../config/redis.js';
 import { loggerUtils } from '../../config/logger.js';
 import { DataHub } from '../../api/DataHub.js';
 
@@ -380,24 +380,18 @@ export class TechnicalTiming {
     const userPrompt = this.buildUserPrompt(input);
 
     try {
-      const response = await openAIClient.createChatCompletion({
+      const response = await openAIClient.chat.completions.create({
         model: model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        functions: [this.technicalTimingSchema],
-        function_call: { name: 'analyze_technical_timing' },
-        temperature: model === 'gpt-3.5-turbo' ? 0.1 : 0.2,
-        max_tokens: model === 'gpt-3.5-turbo' ? 800 : 1200,
+        temperature: 0.2,
+        response_format: { type: "json_object" }
       });
 
-      if (response.choices[0]?.message?.function_call?.arguments) {
-        const analysis = JSON.parse(response.choices[0].message.function_call.arguments);
-        return this.validateAndEnhanceAnalysis(analysis, input);
-      }
-
-      throw new Error('No function call response received');
+      const analysis = JSON.parse(response.choices[0].message.content);
+      return this.validateAndEnhanceAnalysis(analysis, input);
     } catch (error) {
       loggerUtils.aiLogger.error('OpenAI technical analysis failed', {
         symbol: input.symbol,
@@ -688,7 +682,7 @@ Ensure minimum ${this.riskRewardMinimums[input.tradeType]}:1 risk/reward ratio.`
    */
   private async cacheAnalysis(cacheKey: string, analysis: TechnicalTimingOutput): Promise<void> {
     try {
-      await redisClient.setex(cacheKey, this.cacheTimeout, JSON.stringify(analysis));
+      await redisClient().setex(cacheKey, this.cacheTimeout, JSON.stringify(analysis));
       loggerUtils.aiLogger.debug('Technical analysis cached', { cacheKey });
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to cache technical analysis', {
@@ -703,7 +697,7 @@ Ensure minimum ${this.riskRewardMinimums[input.tradeType]}:1 risk/reward ratio.`
    */
   private async getCachedAnalysis(cacheKey: string): Promise<TechnicalTimingOutput | null> {
     try {
-      const cached = await redisClient.get(cacheKey);
+      const cached = await redisClient().get(cacheKey);
       return cached ? JSON.parse(cached) : null;
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to retrieve cached analysis', {

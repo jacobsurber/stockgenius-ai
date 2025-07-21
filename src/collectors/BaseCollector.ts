@@ -172,13 +172,16 @@ Respond with JSON only:
   "keywords": ["array", "of", "financial", "keywords"]
 }`;
 
-      const response = await openAIClient.createCompletion({
-        prompt,
-        maxTokens: 200,
+      const response = await openAIClient.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 200,
         temperature: 0.1,
       });
 
-      const analysis = JSON.parse(response.text);
+      const analysis = JSON.parse(response.choices[0].message.content);
       
       return {
         sentiment: analysis.sentiment || 'neutral',
@@ -365,4 +368,5 @@ Respond with JSON only:
       ? responseTime 
       : (alpha * responseTime + (1 - alpha) * this.metrics.avgResponseTime);
   }
+
 }

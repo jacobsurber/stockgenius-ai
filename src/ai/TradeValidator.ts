@@ -4,7 +4,7 @@
  */
 
 import { openAIClient } from '../config/openai.js';
-import { redisClient } from '../config/redis.js';
+import { redisClientInstance as redisClient } from '../config/redis.js';
 import { loggerUtils } from '../config/logger.js';
 import { DataHub } from '../api/DataHub.js';
 
@@ -376,20 +376,23 @@ export class TradeValidator {
     const userPrompt = this.buildValidationUserPrompt(input, analysis);
 
     try {
-      const response = await openAIClient.createChatCompletion({
+      const response = await openAIClient.chat.completions.create({
         model: 'gpt-4-turbo',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        functions: [this.validationSchema],
-        function_call: { name: 'validate_trade_recommendation' },
+        tools: [{
+          type: 'function',
+          function: this.validationSchema
+        }],
+        tool_choice: { type: 'function', function: { name: 'validate_trade_recommendation' } },
         temperature: 0.05, // Very low temperature for consistent validation
         max_tokens: 2000,
       });
 
-      if (response.choices[0]?.message?.function_call?.arguments) {
-        const validation = JSON.parse(response.choices[0].message.function_call.arguments);
+      if (response.choices[0]?.message?.tool_calls?.[0]?.function?.arguments) {
+        const validation = JSON.parse(response.choices[0].message.tool_calls[0].function.arguments);
         return this.validateAndEnhanceValidation(validation, input);
       }
 
@@ -973,8 +976,11 @@ Provide a thorough validation with specific issues identified and actionable imp
    */
   private async cacheValidation(cacheKey: string, validation: ValidationOutput): Promise<void> {
     try {
-      await redisClient.setex(cacheKey, this.cacheTimeout, JSON.stringify(validation));
-      loggerUtils.aiLogger.debug('Trade validation cached', { cacheKey });
+      const client = redisClient();
+      if (client) {
+        await client.setex(cacheKey, this.cacheTimeout, JSON.stringify(validation));
+        loggerUtils.aiLogger.debug('Trade validation cached', { cacheKey });
+      }
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to cache trade validation', {
         cacheKey,
@@ -988,8 +994,12 @@ Provide a thorough validation with specific issues identified and actionable imp
    */
   private async getCachedValidation(cacheKey: string): Promise<ValidationOutput | null> {
     try {
-      const cached = await redisClient.get(cacheKey);
-      return cached ? JSON.parse(cached) : null;
+      const client = redisClient();
+      if (client) {
+        const cached = await client.get(cacheKey);
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to retrieve cached validation', {
         cacheKey,

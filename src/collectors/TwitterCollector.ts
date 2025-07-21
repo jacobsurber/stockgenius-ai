@@ -307,7 +307,7 @@ export class TwitterCollector extends BaseCollector {
    */
   private async processTweet(tweet: any, user: any): Promise<TwitterPostData> {
     const content = tweet.text || '';
-    const sentiment = await this.analyzeSentiment(content);
+    const sentimentResult = await this.analyzeSentiment(content);
     const symbols = this.extractStockSymbols(content);
     const hashtags = this.extractHashtags(content);
     
@@ -321,6 +321,18 @@ export class TwitterCollector extends BaseCollector {
       hasSymbols: symbols.length > 0,
       contentLength: content.length,
     });
+
+    // Convert sentiment result to SentimentData format
+    const sentiment = {
+      sentiment: sentimentResult.sentiment,
+      score: sentimentResult.score,
+      magnitude: sentimentResult.magnitude,
+      keywords: sentimentResult.keywords,
+      timestamp: Date.now(),
+      source: 'twitter',
+      confidence: confidence,
+      metadata: { tweetId: tweet.id, username: user?.username }
+    };
 
     return {
       tweetId: tweet.id,

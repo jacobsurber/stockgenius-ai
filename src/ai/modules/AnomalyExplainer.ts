@@ -4,7 +4,7 @@
  */
 
 import { openAIClient } from '../../config/openai.js';
-import { redisClient } from '../../config/redis.js';
+import { redisClientInstance as redisClient } from '../../config/redis.js';
 import { loggerUtils } from '../../config/logger.js';
 import { DataHub } from '../../api/DataHub.js';
 
@@ -97,6 +97,29 @@ export interface CorrelationData {
       impact: string;
       timing: string;
     }>;
+  };
+}
+
+export interface AnomalyExplainerInput {
+  symbol: string;
+  anomaly: PriceAnomaly;
+  correlationData: CorrelationData;
+  options?: {
+    investigationDepth?: 'surface' | 'medium' | 'deep';
+    useCache?: boolean;
+    maxProcessingTime?: number;
+  };
+}
+
+export interface AnomalyExplainerOutput {
+  symbol: string;
+  timestamp: number;
+  investigation: AnomalyExplanation;
+  metadata: {
+    processingTime: number;
+    cacheHit: boolean;
+    confidence: number;
+    apiCalls: number;
   };
 }
 
@@ -346,20 +369,27 @@ export class AnomalyExplainer {
     const userPrompt = this.buildUserPrompt(anomaly, correlationData);
 
     try {
-      const response = await openAIClient.createChatCompletion({
+      if (!openAIClient) {
+        throw new Error('OpenAI client not initialized');
+      }
+      
+      const response = await openAIClient.chat.completions.create({
         model: 'gpt-4-turbo',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        functions: [this.anomalyExplanationSchema],
-        function_call: { name: 'explain_market_anomaly' },
+        tools: [{
+          type: 'function',
+          function: this.anomalyExplanationSchema
+        }],
+        tool_choice: { type: 'function', function: { name: 'explain_market_anomaly' } },
         temperature: 0.1,
         max_tokens: 2000,
       });
 
-      if (response.choices[0]?.message?.function_call?.arguments) {
-        const analysis = JSON.parse(response.choices[0].message.function_call.arguments);
+      if (response.choices[0]?.message?.tool_calls?.[0]?.function?.arguments) {
+        const analysis = JSON.parse(response.choices[0].message.tool_calls[0].function.arguments);
         return this.validateAndEnhanceAnalysis(analysis, anomaly, correlationData);
       }
 
@@ -884,8 +914,11 @@ Focus on distinguishing between news-driven moves, technical breakouts, institut
    */
   private async cacheExplanation(cacheKey: string, explanation: AnomalyExplanation): Promise<void> {
     try {
-      await redisClient.setex(cacheKey, this.cacheTimeout, JSON.stringify(explanation));
-      loggerUtils.aiLogger.debug('Anomaly explanation cached', { cacheKey });
+      const client = redisClient();
+      if (client) {
+        await client.setex(cacheKey, this.cacheTimeout, JSON.stringify(explanation));
+        loggerUtils.aiLogger.debug('Anomaly explanation cached', { cacheKey });
+      }
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to cache anomaly explanation', {
         cacheKey,
@@ -896,8 +929,12 @@ Focus on distinguishing between news-driven moves, technical breakouts, institut
 
   private async getCachedExplanation(cacheKey: string): Promise<AnomalyExplanation | null> {
     try {
-      const cached = await redisClient.get(cacheKey);
-      return cached ? JSON.parse(cached) : null;
+      const client = redisClient();
+      if (client) {
+        const cached = await client.get(cacheKey);
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to retrieve cached explanation', {
         cacheKey,

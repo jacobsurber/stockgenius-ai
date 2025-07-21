@@ -4,7 +4,7 @@
  */
 
 import { openAIClient } from '../../config/openai.js';
-import { redisClient } from '../../config/redis.js';
+import { redisClientInstance as redisClient } from '../../config/redis.js';
 import { loggerUtils } from '../../config/logger.js';
 import { DataHub } from '../../api/DataHub.js';
 
@@ -225,20 +225,23 @@ export class SectorIntelligence {
     const userPrompt = this.buildUserPrompt(input, promptTemplate);
 
     try {
-      const response = await openAIClient.createChatCompletion({
+      const response = await openAIClient.chat.completions.create({
         model: 'gpt-4-turbo',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        functions: [this.sectorAnalysisSchema],
-        function_call: { name: 'analyze_sector_intelligence' },
+        tools: [{
+          type: 'function',
+          function: this.sectorAnalysisSchema
+        }],
+        tool_choice: { type: 'function', function: { name: 'analyze_sector_intelligence' } },
         temperature: 0.1,
         max_tokens: 1000,
       });
 
-      if (response.choices[0]?.message?.function_call?.arguments) {
-        const analysis = JSON.parse(response.choices[0].message.function_call.arguments);
+      if (response.choices[0]?.message?.tool_calls?.[0]?.function?.arguments) {
+        const analysis = JSON.parse(response.choices[0].message.tool_calls[0].function.arguments);
         return this.validateAndEnhanceAnalysis(analysis, input);
       }
 
@@ -524,8 +527,11 @@ Analyze this stock within its sector context and provide structured insights usi
    */
   private async cacheAnalysis(cacheKey: string, analysis: any): Promise<void> {
     try {
-      await redisClient.setex(cacheKey, this.cacheTimeout, JSON.stringify(analysis));
-      loggerUtils.aiLogger.debug('Sector analysis cached', { cacheKey });
+      const client = redisClient();
+      if (client) {
+        await client.setex(cacheKey, this.cacheTimeout, JSON.stringify(analysis));
+        loggerUtils.aiLogger.debug('Sector analysis cached', { cacheKey });
+      }
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to cache sector analysis', {
         cacheKey,
@@ -539,8 +545,12 @@ Analyze this stock within its sector context and provide structured insights usi
    */
   private async getCachedAnalysis(cacheKey: string): Promise<any | null> {
     try {
-      const cached = await redisClient.get(cacheKey);
-      return cached ? JSON.parse(cached) : null;
+      const client = redisClient();
+      if (client) {
+        const cached = await client.get(cacheKey);
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to retrieve cached analysis', {
         cacheKey,
@@ -694,11 +704,12 @@ Provide precise, actionable insights with confidence scoring.`,
   async getSectorClassification(symbol: string): Promise<string> {
     try {
       // Try to get sector from company profile
-      const profile = await this.dataHub.finnhubClient.getCompanyProfile(symbol);
-      
-      if (profile?.finnhubIndustry) {
-        return this.mapIndustryToSector(profile.finnhubIndustry);
-      }
+      // Finnhub disabled - skip profile check
+      // const profile = await this.dataHub.finnhubClient.getCompanyProfile(symbol);
+      // 
+      // if (profile?.finnhubIndustry) {
+      //   return this.mapIndustryToSector(profile.finnhubIndustry);
+      // }
 
       // Fallback: check if symbol is in any of our sector mappings
       for (const [sector, symbols] of Object.entries(this.sectorMappings)) {

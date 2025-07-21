@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StockGenius - Dashboard</title>
-    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/styles.css?v=<%= Date.now() %>">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -37,84 +37,82 @@
 
         <!-- Enhanced Analysis Controls -->
         <div class="analysis-controls">
-            <div class="control-section">
-                <h3>Analysis Configuration</h3>
-                
-                <!-- User Preference Controls -->
-                <div class="preference-controls">
-                    <div class="control-group">
-                        <label for="sectors">Sectors:</label>
-                        <select id="sectors" multiple>
-                            <% availableSectors.forEach(sector => { %>
-                                <option value="<%= sector %>" <%= userPrefs.sectors.includes(sector) ? 'selected' : '' %>>
-                                    <%= sector %>
-                                </option>
-                            <% }); %>
-                        </select>
-                    </div>
+            <div class="controls-container">
+                <div class="control-section">
+                    <h3>Analysis Configuration</h3>
                     
-                    <div class="control-group">
-                        <label for="riskTolerance">Risk Tolerance:</label>
-                        <select id="riskTolerance">
-                            <option value="conservative" <%= userPrefs.riskTolerance === 'conservative' ? 'selected' : '' %>>Conservative</option>
-                            <option value="moderate" <%= userPrefs.riskTolerance === 'moderate' ? 'selected' : '' %>>Moderate</option>
-                            <option value="aggressive" <%= userPrefs.riskTolerance === 'aggressive' ? 'selected' : '' %>>Aggressive</option>
-                        </select>
-                    </div>
-                    
-                    <div class="control-group">
-                        <label for="timeHorizon">Time Horizon:</label>
-                        <select id="timeHorizon">
-                            <option value="intraday" <%= userPrefs.timeHorizon === 'intraday' ? 'selected' : '' %>>Intraday</option>
-                            <option value="swing" <%= userPrefs.timeHorizon === 'swing' ? 'selected' : '' %>>Swing (1-5 days)</option>
-                            <option value="position" <%= userPrefs.timeHorizon === 'position' ? 'selected' : '' %>>Position (weeks+)</option>
-                        </select>
-                    </div>
-                    
-                    <div class="control-group">
-                        <label for="analysisDepth">Analysis Depth:</label>
-                        <select id="analysisDepth">
-                            <option value="quick" <%= userPrefs.analysisDepth === 'quick' ? 'selected' : '' %>>Quick Scan</option>
-                            <option value="comprehensive" <%= userPrefs.analysisDepth === 'comprehensive' ? 'selected' : '' %>>Comprehensive</option>
-                            <option value="deep" <%= userPrefs.analysisDepth === 'deep' ? 'selected' : '' %>>Deep Analysis</option>
-                        </select>
-                    </div>
-                    
-                    <div class="control-group">
-                        <label for="maxCards">Max Trade Cards:</label>
-                        <select id="maxCards">
-                            <option value="3" <%= userPrefs.maxCards === 3 ? 'selected' : '' %>>3</option>
-                            <option value="5" <%= userPrefs.maxCards === 5 ? 'selected' : '' %>>5</option>
-                            <option value="8" <%= userPrefs.maxCards === 8 ? 'selected' : '' %>>8</option>
-                            <option value="10" <%= userPrefs.maxCards === 10 ? 'selected' : '' %>>10</option>
-                        </select>
-                    </div>
-                    
-                    <button id="updateAnalysis" class="btn-primary">Update Analysis</button>
-                    <button id="refreshData" class="btn-secondary">Refresh Data</button>
-                </div>
-                
-                <!-- Watchlist Info -->
-                <div class="watchlist-info">
-                    <h4>Current Watchlist</h4>
-                    <p><strong>Total Symbols:</strong> <%= watchlistInfo.total %></p>
-                    <p><strong>Active Sectors:</strong> <%= watchlistInfo.sectors.join(', ') %></p>
-                    <p><strong>Source:</strong> <%= watchlistInfo.source %></p>
-                </div>
-                
-                <div class="analysis-status">
-                    <% if (pipelineStatus && pipelineStatus.success !== undefined) { %>
-                        <div class="status-indicator <%= pipelineStatus.success ? 'success' : 'error' %>">
-                            Last run: <%= pipelineStatus.success ? 'Success' : 'Failed' %>
+                    <!-- User Preference Controls -->
+                    <div class="preference-controls">
+                        <div class="control-group">
+                            <label for="sectors">Sector:</label>
+                            <select id="sectors">
+                                <option value="">Select a sector...</option>
+                                <% availableSectors.forEach(sector => { %>
+                                    <option value="<%= sector %>" <%= userPrefs.sectors.includes(sector) ? 'selected' : '' %>>
+                                        <%= sector %>
+                                    </option>
+                                <% }); %>
+                            </select>
                         </div>
-                    <% } else { %>
-                        <div class="status-indicator idle">Ready</div>
-                    <% } %>
+                        
+                        <div class="control-group">
+                            <label for="riskTolerance">Risk Tolerance:</label>
+                            <select id="riskTolerance">
+                                <option value="conservative" <%= userPrefs.riskTolerance === 'conservative' ? 'selected' : '' %>>Conservative</option>
+                                <option value="moderate" <%= userPrefs.riskTolerance === 'moderate' ? 'selected' : '' %>>Moderate</option>
+                                <option value="aggressive" <%= userPrefs.riskTolerance === 'aggressive' ? 'selected' : '' %>>Aggressive</option>
+                            </select>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="timeHorizon">Time Horizon:</label>
+                            <select id="timeHorizon">
+                                <option value="intraday" <%= userPrefs.timeHorizon === 'intraday' ? 'selected' : '' %>>Intraday</option>
+                                <option value="swing" <%= userPrefs.timeHorizon === 'swing' ? 'selected' : '' %>>Swing (1-5 days)</option>
+                                <option value="position" <%= userPrefs.timeHorizon === 'position' ? 'selected' : '' %>>Position (weeks+)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="analysisDepth">Analysis Depth:</label>
+                            <select id="analysisDepth">
+                                <option value="quick" <%= userPrefs.analysisDepth === 'quick' ? 'selected' : '' %>>Quick Scan</option>
+                                <option value="comprehensive" <%= userPrefs.analysisDepth === 'comprehensive' ? 'selected' : '' %>>Comprehensive</option>
+                                <option value="deep" <%= userPrefs.analysisDepth === 'deep' ? 'selected' : '' %>>Deep Analysis</option>
+                            </select>
+                        </div>
+                        
+                        <div class="control-group">
+                            <label for="maxCards">Max Trade Cards:</label>
+                            <select id="maxCards">
+                                <option value="3" <%= userPrefs.maxCards === 3 ? 'selected' : '' %>>3</option>
+                                <option value="5" <%= userPrefs.maxCards === 5 ? 'selected' : '' %>>5</option>
+                                <option value="8" <%= userPrefs.maxCards === 8 ? 'selected' : '' %>>8</option>
+                                <option value="10" <%= userPrefs.maxCards === 10 ? 'selected' : '' %>>10</option>
+                            </select>
+                        </div>
+                        
+                        <button id="trigger-analysis" class="analysis-button">
+                            <span class="button-text">Run Analysis</span>
+                            <span class="loading-spinner" style="display: none;">Running...</span>
+                        </button>
+                    </div>
                 </div>
-                <button id="trigger-analysis" class="analysis-button">
-                    <span class="button-text">Run Analysis</span>
-                    <span class="loading-spinner" style="display: none;">Running...</span>
-                </button>
+                
+                <div class="analysis-progress-section">
+                    <h3>Analysis Progress</h3>
+                    <div class="progress-container">
+                        <div class="progress-steps" id="progressSteps">
+                            <div class="step-item idle">
+                                <div class="step-icon">⏳</div>
+                                <div class="step-text">Ready to start analysis</div>
+                            </div>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -127,6 +125,62 @@
                     <%= tradeCards.json.summary.highConfidenceCards %> high confidence | 
                     Avg: <%= tradeCards.json.summary.averageConfidence %>%
                 </div>
+                <% 
+                // Calculate data quality summary
+                let liveCount = 0;
+                let fallbackCount = 0;
+                let generatedCount = 0;
+                
+                tradeCards.json.cards.forEach(card => {
+                    if (card.metadata && card.metadata.sources) {
+                        const sources = Object.values(card.metadata.sources);
+                        const hasGenerated = sources.some(source => 
+                            source === 'backup' || source === 'fallback-generated' ||
+                            (typeof source === 'string' && source.includes('generated'))
+                        );
+                        const hasFallback = sources.some(source => 
+                            source === 'backup' || source === 'fallback-generated' || 
+                            source === 'cache' || (typeof source === 'string' && source.includes('fallback'))
+                        );
+                        
+                        if (hasGenerated) generatedCount++;
+                        else if (hasFallback) fallbackCount++;
+                        else liveCount++;
+                    } else {
+                        liveCount++;
+                    }
+                });
+                %>
+                <% if (fallbackCount > 0 || generatedCount > 0) { %>
+                    <div class="data-quality-summary">
+                        <% if (generatedCount > 0) { %>
+                            <div class="quality-warning">
+                                <div class="quality-warning-icon"></div>
+                                <strong>Notice:</strong> <%= generatedCount %> card<%= generatedCount > 1 ? 's' : '' %> using simulated data. These are not live trading recommendations.
+                            </div>
+                        <% } %>
+                        <div class="data-sources-summary">
+                            <% if (liveCount > 0) { %>
+                                <span class="data-quality-indicator data-quality-live">
+                                    <div class="data-quality-icon"></div>
+                                    <%= liveCount %> Live
+                                </span>
+                            <% } %>
+                            <% if (fallbackCount > 0) { %>
+                                <span class="data-quality-indicator data-quality-fallback">
+                                    <div class="data-quality-icon"></div>
+                                    <%= fallbackCount %> Fallback
+                                </span>
+                            <% } %>
+                            <% if (generatedCount > 0) { %>
+                                <span class="data-quality-indicator data-quality-generated">
+                                    <div class="data-quality-icon"></div>
+                                    <%= generatedCount %> Simulated
+                                </span>
+                            <% } %>
+                        </div>
+                    </div>
+                <% } %>
             </div>
 
             <div class="trade-cards-grid">
@@ -142,6 +196,58 @@
                                 </div>
                                 <span class="confidence-text"><%= card.confidence %>%</span>
                             </div>
+                        </div>
+                        
+                        <!-- Data Quality Indicator -->
+                        <% 
+                        let dataQuality = 'live';
+                        let qualityText = 'Live Data';
+                        let hasWarning = false;
+                        let warningText = '';
+                        
+                        // Check for fallback data indicators in the card data
+                        if (card.metadata && card.metadata.sources) {
+                            const sources = Object.values(card.metadata.sources);
+                            const hasFallback = sources.some(source => 
+                                source === 'backup' || 
+                                source === 'fallback-generated' || 
+                                source === 'cache' ||
+                                (typeof source === 'string' && source.includes('fallback'))
+                            );
+                            const hasGenerated = sources.some(source => 
+                                source === 'backup' || 
+                                source === 'fallback-generated' ||
+                                (typeof source === 'string' && source.includes('generated'))
+                            );
+                            
+                            if (hasGenerated) {
+                                dataQuality = 'generated';
+                                qualityText = 'Simulated';
+                                hasWarning = true;
+                                warningText = 'Using simulated data - not live market recommendations';
+                            } else if (hasFallback) {
+                                dataQuality = 'fallback';
+                                qualityText = 'Fallback';
+                                hasWarning = true;
+                                warningText = 'Using fallback data sources';
+                            } else if (sources.includes('cache')) {
+                                dataQuality = 'cached';
+                                qualityText = 'Cached';
+                            }
+                        }
+                        %>
+                        
+                        <div class="data-quality-header">
+                            <div class="data-quality-indicator data-quality-<%= dataQuality %>">
+                                <div class="data-quality-icon"></div>
+                                <%= qualityText %>
+                            </div>
+                            <% if (hasWarning) { %>
+                                <div class="quality-warning">
+                                    <div class="quality-warning-icon"></div>
+                                    <%= warningText %>
+                                </div>
+                            <% } %>
                         </div>
 
                         <div class="card-body">
@@ -197,6 +303,6 @@
         </div>
     </div>
 
-    <script src="/js/dashboard.js"></script>
+    <script src="/js/dashboard.js?v=<%= Date.now() %>"></script>
 </body>
 </html>

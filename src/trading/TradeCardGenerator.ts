@@ -177,31 +177,31 @@ export class TradeCardGenerator {
     high_conviction: {
       priority: 1,
       maxCards: 2,
-      minConfidence: 80,
+      minConfidence: 60,
       description: 'Best risk-adjusted opportunities with strong signal confluence',
     },
     momentum: {
       priority: 2,
       maxCards: 1,
-      minConfidence: 75,
+      minConfidence: 55,
       description: 'Strong directional moves with technical momentum',
     },
     sentiment_play: {
       priority: 3,
       maxCards: 1,
-      minConfidence: 70,
+      minConfidence: 50,
       description: 'Social sentiment-driven opportunities with authentic signals',
     },
     earnings: {
       priority: 4,
       maxCards: 1,
-      minConfidence: 70,
+      minConfidence: 50,
       description: 'Earnings-related plays with drift pattern analysis',
     },
     wildcard: {
       priority: 5,
       maxCards: 1,
-      minConfidence: 65,
+      minConfidence: 45,
       description: 'Unique opportunities and anomaly-driven trades',
     },
   };
@@ -298,61 +298,221 @@ export class TradeCardGenerator {
     const timestamp = Date.now();
     const date = new Date().toISOString().split('T')[0];
     
+    // METHOD ENTRY LOGGING
+    loggerUtils.aiLogger.info('🚀 STARTING generateDailyCards method', {
+      methodName: 'generateDailyCards',
+      timestamp,
+      date,
+      inputParams: {
+        fusionResultsCount: fusionResults?.length || 0,
+        validationResultsCount: validationResults?.length || 0,
+        hasMarketContext: !!marketContext,
+        marketContextKeys: marketContext ? Object.keys(marketContext) : [],
+        fusionResultSample: fusionResults?.slice(0, 2).map(card => ({
+          id: card.id,
+          symbol: card.symbol,
+          confidence: card.header?.confidence
+        })) || []
+      }
+    });
+    
     try {
-      loggerUtils.aiLogger.info('Generating daily trade cards', {
-        fusionResultsCount: fusionResults.length,
-        validationResultsCount: validationResults.length,
-        date,
+      // STEP 1: CATEGORIZATION
+      loggerUtils.aiLogger.info('🏷️ STEP 1: Starting categorization phase', {
+        step: 'categorization',
+        fusionResultsToProcess: fusionResults.length
       });
-
-      // Categorize and filter trade cards
+      
       const categorizedCards = await this.categorizeTradeCards(fusionResults, validationResults);
       
-      // Select best cards for each category
+      loggerUtils.aiLogger.info('✅ STEP 1 COMPLETE: Categorization finished', {
+        step: 'categorization',
+        categorizedCardsKeys: Object.keys(categorizedCards),
+        categoryCounts: Object.fromEntries(
+          Object.entries(categorizedCards).map(([category, cards]) => [category, cards.length])
+        ),
+        totalCategorizedCards: Object.values(categorizedCards).reduce((sum, cards) => sum + cards.length, 0)
+      });
+      
+      // STEP 2: SELECTION
+      loggerUtils.aiLogger.info('🎯 STEP 2: Starting card selection phase', {
+        step: 'selection',
+        categorizedCardsAvailable: Object.values(categorizedCards).reduce((sum, cards) => sum + cards.length, 0)
+      });
+      
       const selectedCards = this.selectBestCards(categorizedCards);
       
-      // Format cards with complete information
+      loggerUtils.aiLogger.info('✅ STEP 2 COMPLETE: Card selection finished', {
+        step: 'selection',
+        selectedCardsCount: selectedCards.length,
+        selectedCardSymbols: selectedCards.map(card => card.symbol),
+        selectedCardConfidences: selectedCards.map(card => card.header?.confidence)
+      });
+      
+      // STEP 3: FORMATTING
+      loggerUtils.aiLogger.info('🎨 STEP 3: Starting card formatting phase', {
+        step: 'formatting',
+        cardsToFormat: selectedCards.length
+      });
+      
       const formattedCards: FormattedTradeCard[] = [];
       
-      for (const card of selectedCards) {
-        const formatted = await this.formatTradeCard(card, marketContext);
-        if (formatted) {
-          formattedCards.push(formatted);
+      for (let i = 0; i < selectedCards.length; i++) {
+        const card = selectedCards[i];
+        loggerUtils.aiLogger.info(`🔄 Formatting card ${i + 1}/${selectedCards.length}`, {
+          step: 'formatting',
+          cardIndex: i,
+          cardId: card.id,
+          cardSymbol: card.symbol
+        });
+        
+        try {
+          const formatted = await this.formatTradeCard(card, marketContext);
+          if (formatted) {
+            formattedCards.push(formatted);
+            loggerUtils.aiLogger.info(`✅ Card ${i + 1} formatted successfully`, {
+              step: 'formatting',
+              cardIndex: i,
+              cardSymbol: card.symbol,
+              formattedCardId: formatted.id
+            });
+          } else {
+            loggerUtils.aiLogger.warn(`⚠️ Card ${i + 1} formatting returned null`, {
+              step: 'formatting',
+              cardIndex: i,
+              cardSymbol: card.symbol
+            });
+          }
+        } catch (cardError) {
+          loggerUtils.aiLogger.error(`❌ Error formatting card ${i + 1}`, {
+            step: 'formatting',
+            cardIndex: i,
+            cardSymbol: card.symbol,
+            error: (cardError as Error).message,
+            stack: (cardError as Error).stack
+          });
         }
       }
 
-      // Sort by confidence and category priority
+      loggerUtils.aiLogger.info('✅ STEP 3 COMPLETE: Card formatting finished', {
+        step: 'formatting',
+        originalCardCount: selectedCards.length,
+        formattedCardCount: formattedCards.length,
+        formattedCardSymbols: formattedCards.map(card => card.symbol)
+      });
+
+      // STEP 4: SORTING
+      loggerUtils.aiLogger.info('📊 STEP 4: Starting card sorting phase', {
+        step: 'sorting',
+        cardsToSort: formattedCards.length
+      });
+
       formattedCards.sort((a, b) => {
         const categoryPriorityDiff = this.cardCategories[a.category].priority - this.cardCategories[b.category].priority;
         if (categoryPriorityDiff !== 0) return categoryPriorityDiff;
         return b.confidenceScore - a.confidenceScore;
       });
 
-      // Create daily card set
+      loggerUtils.aiLogger.info('✅ STEP 4 COMPLETE: Card sorting finished', {
+        step: 'sorting',
+        sortedCardOrder: formattedCards.map(card => ({
+          symbol: card.symbol,
+          category: card.category,
+          confidence: card.confidenceScore
+        }))
+      });
+
+      // STEP 5: DAILY CARD SET CREATION
+      loggerUtils.aiLogger.info('📋 STEP 5: Starting daily card set creation', {
+        step: 'dailyCardSet',
+        formattedCardsCount: formattedCards.length
+      });
+
       const dailyCards = this.createDailyCardSet(formattedCards, marketContext, date, timestamp);
       
-      // Store in database
+      loggerUtils.aiLogger.info('✅ STEP 5 COMPLETE: Daily card set created', {
+        step: 'dailyCardSet',
+        dailyCardsDate: dailyCards.date,
+        dailyCardsTimestamp: dailyCards.timestamp,
+        totalCards: dailyCards.summary.totalCards,
+        highConfidenceCards: dailyCards.summary.highConfidenceCards,
+        averageConfidence: dailyCards.summary.averageConfidence
+      });
+      
+      // STEP 6: DATABASE STORAGE
+      loggerUtils.aiLogger.info('💾 STEP 6: Starting database storage', {
+        step: 'storage',
+        cardsToStore: dailyCards.cards.length,
+        databaseConnected: !!this.database
+      });
+      
       await this.storeDailyCards(dailyCards);
       
-      // Generate outputs
+      loggerUtils.aiLogger.info('✅ STEP 6 COMPLETE: Database storage finished', {
+        step: 'storage',
+        storedDate: dailyCards.date,
+        storedCardCount: dailyCards.cards.length
+      });
+      
+      // STEP 7: OUTPUT GENERATION
+      loggerUtils.aiLogger.info('📄 STEP 7: Starting output generation', {
+        step: 'outputGeneration',
+        cardsForOutput: dailyCards.cards.length
+      });
+      
       const output: TradeCardOutput = {
         json: dailyCards,
         html: this.generateHTMLOutput(dailyCards),
         plainText: this.generatePlainTextOutput(dailyCards),
       };
 
-      loggerUtils.aiLogger.info('Daily trade cards generated successfully', {
+      loggerUtils.aiLogger.info('✅ STEP 7 COMPLETE: Output generation finished', {
+        step: 'outputGeneration',
+        htmlLength: output.html.length,
+        plainTextLength: output.plainText.length,
+        jsonCardCount: output.json.cards.length
+      });
+
+      // METHOD EXIT LOGGING
+      loggerUtils.aiLogger.info('🎉 SUCCESS: generateDailyCards method completed successfully', {
+        methodName: 'generateDailyCards',
         date,
-        totalCards: formattedCards.length,
-        categories: Object.keys(this.groupCardsByCategory(formattedCards)),
-        averageConfidence: formattedCards.reduce((sum, card) => sum + card.confidenceScore, 0) / formattedCards.length,
+        totalExecutionTime: Date.now() - timestamp,
+        finalResults: {
+          totalCards: formattedCards.length,
+          categories: Object.keys(this.groupCardsByCategory(formattedCards)),
+          averageConfidence: formattedCards.length > 0 ? 
+            formattedCards.reduce((sum, card) => sum + card.confidenceScore, 0) / formattedCards.length : 0,
+          outputSizes: {
+            htmlLength: output.html.length,
+            plainTextLength: output.plainText.length,
+            jsonSize: JSON.stringify(output.json).length
+          }
+        }
       });
 
       return output;
     } catch (error) {
-      loggerUtils.aiLogger.error('Failed to generate daily trade cards', {
-        error: (error as Error).message,
+      // DETAILED ERROR LOGGING
+      loggerUtils.aiLogger.error('💥 FATAL ERROR in generateDailyCards method', {
+        methodName: 'generateDailyCards',
         date,
+        timestamp,
+        executionTime: Date.now() - timestamp,
+        error: {
+          message: (error as Error).message,
+          stack: (error as Error).stack,
+          name: (error as Error).name
+        },
+        inputState: {
+          fusionResultsCount: fusionResults?.length || 0,
+          validationResultsCount: validationResults?.length || 0,
+          hasMarketContext: !!marketContext
+        },
+        systemState: {
+          databaseConnected: !!this.database,
+          dataHubConnected: !!this.dataHub
+        }
       });
       throw error;
     }
@@ -365,6 +525,11 @@ export class TradeCardGenerator {
     fusionResults: TradeCard[],
     validationResults: ValidationOutput[]
   ): Promise<Record<TradeCardCategory, TradeCard[]>> {
+    loggerUtils.aiLogger.info('🔍 Starting categorizeTradeCards process', {
+      fusionResultsCount: fusionResults.length,
+      validationResultsCount: validationResults.length
+    });
+
     const categorized: Record<TradeCardCategory, TradeCard[]> = {
       high_conviction: [],
       momentum: [],
@@ -373,14 +538,51 @@ export class TradeCardGenerator {
       wildcard: [],
     };
 
-    for (const card of fusionResults) {
-      const validation = validationResults.find(v => v.tradeId === card.id);
-      const category = this.determineCardCategory(card, validation);
-      
-      if (category) {
-        categorized[category].push(card);
+    for (let i = 0; i < fusionResults.length; i++) {
+      const card = fusionResults[i];
+      try {
+        loggerUtils.aiLogger.info(`🎯 Categorizing card ${i + 1}/${fusionResults.length}`, {
+          cardIndex: i,
+          cardId: card.id,
+          cardSymbol: card.symbol,
+          confidence: card.header?.confidence
+        });
+
+        const validation = validationResults.find(v => v.tradeId === card.id);
+        const category = this.determineCardCategory(card, validation);
+        
+        if (category) {
+          categorized[category].push(card);
+          loggerUtils.aiLogger.info(`✅ Card categorized successfully`, {
+            cardIndex: i,
+            cardSymbol: card.symbol,
+            assignedCategory: category,
+            hasValidation: !!validation
+          });
+        } else {
+          loggerUtils.aiLogger.warn(`⚠️ Card did not meet criteria for any category`, {
+            cardIndex: i,
+            cardSymbol: card.symbol,
+            confidence: card.header?.confidence,
+            hasValidation: !!validation
+          });
+        }
+      } catch (error) {
+        loggerUtils.aiLogger.error(`❌ Error categorizing card ${i + 1}`, {
+          cardIndex: i,
+          cardId: card.id,
+          cardSymbol: card.symbol,
+          error: (error as Error).message
+        });
       }
     }
+
+    loggerUtils.aiLogger.info('✅ categorizeTradeCards process completed', {
+      totalProcessed: fusionResults.length,
+      categorizedCounts: Object.fromEntries(
+        Object.entries(categorized).map(([category, cards]) => [category, cards.length])
+      )
+    });
 
     return categorized;
   }
@@ -460,22 +662,88 @@ export class TradeCardGenerator {
     marketContext: any,
     validation?: ValidationOutput
   ): Promise<FormattedTradeCard | null> {
-    try {
-      const category = this.determineCardCategory(fusionCard, validation);
-      if (!category) return null;
+    loggerUtils.aiLogger.info('📝 Starting formatTradeCard process', {
+      cardId: fusionCard.id,
+      cardSymbol: fusionCard.symbol,
+      hasValidation: !!validation,
+      hasMarketContext: !!marketContext
+    });
 
-      // Get company name (would integrate with real data source)
+    try {
+      // STEP 1: Determine category
+      loggerUtils.aiLogger.info('🔄 Step 1: Determining card category', {
+        cardSymbol: fusionCard.symbol
+      });
+      
+      const category = this.determineCardCategory(fusionCard, validation);
+      if (!category) {
+        loggerUtils.aiLogger.warn('⚠️ Card category determination failed - returning null', {
+          cardSymbol: fusionCard.symbol,
+          confidence: fusionCard.header?.confidence
+        });
+        return null;
+      }
+
+      loggerUtils.aiLogger.info('✅ Step 1 complete: Category determined', {
+        cardSymbol: fusionCard.symbol,
+        category
+      });
+
+      // STEP 2: Get company name
+      loggerUtils.aiLogger.info('🔄 Step 2: Getting company name', {
+        cardSymbol: fusionCard.symbol
+      });
+      
       const companyName = await this.getCompanyName(fusionCard.symbol);
       
-      // Build chart references
+      loggerUtils.aiLogger.info('✅ Step 2 complete: Company name retrieved', {
+        cardSymbol: fusionCard.symbol,
+        companyName: companyName || 'Not found'
+      });
+      
+      // STEP 3: Build chart references
+      loggerUtils.aiLogger.info('🔄 Step 3: Building chart references', {
+        cardSymbol: fusionCard.symbol
+      });
+      
       const chartData = this.buildChartReference(fusionCard, marketContext);
       
-      // Calculate time to hold
+      loggerUtils.aiLogger.info('✅ Step 3 complete: Chart references built', {
+        cardSymbol: fusionCard.symbol,
+        chartDataKeys: Object.keys(chartData)
+      });
+      
+      // STEP 4: Calculate time to hold
+      loggerUtils.aiLogger.info('🔄 Step 4: Calculating time to hold', {
+        cardSymbol: fusionCard.symbol
+      });
+      
       const timeToHold = this.calculateTimeToHold(fusionCard);
       
-      // Format narrative sections
+      loggerUtils.aiLogger.info('✅ Step 4 complete: Time to hold calculated', {
+        cardSymbol: fusionCard.symbol,
+        optimal: timeToHold.optimal,
+        urgency: timeToHold.urgency
+      });
+      
+      // STEP 5: Format narrative sections
+      loggerUtils.aiLogger.info('🔄 Step 5: Formatting narrative sections', {
+        cardSymbol: fusionCard.symbol
+      });
+      
       const whyThisTrade = this.formatWhyThisTrade(fusionCard);
       const whatCouldGoWrong = this.formatWhatCouldGoWrong(fusionCard);
+
+      loggerUtils.aiLogger.info('✅ Step 5 complete: Narrative sections formatted', {
+        cardSymbol: fusionCard.symbol,
+        whyTradeKeyPoints: whyThisTrade.keyPoints?.length || 0,
+        primaryRisks: whatCouldGoWrong.primaryRisks?.length || 0
+      });
+
+      // STEP 6: Create formatted card object
+      loggerUtils.aiLogger.info('🔄 Step 6: Creating formatted card object', {
+        cardSymbol: fusionCard.symbol
+      });
 
       const formattedCard: FormattedTradeCard = {
         id: fusionCard.id,
@@ -532,12 +800,36 @@ export class TradeCardGenerator {
         },
       };
 
+      loggerUtils.aiLogger.info('✅ formatTradeCard process completed successfully', {
+        cardId: fusionCard.id,
+        cardSymbol: fusionCard.symbol,
+        category,
+        confidenceScore: formattedCard.confidenceScore,
+        tradeDirection: formattedCard.tradeDirection,
+        riskGrade: formattedCard.riskAssessment.riskGrade
+      });
+
       return formattedCard;
     } catch (error) {
-      loggerUtils.aiLogger.error('Failed to format trade card', {
+      loggerUtils.aiLogger.error('❌ FAILED to format trade card', {
         cardId: fusionCard.id,
         symbol: fusionCard.symbol,
-        error: (error as Error).message,
+        error: {
+          message: (error as Error).message,
+          stack: (error as Error).stack,
+          name: (error as Error).name
+        },
+        fusionCardData: {
+          hasHeader: !!fusionCard.header,
+          hasExecution: !!fusionCard.execution,
+          hasNarrative: !!fusionCard.narrative,
+          headerConfidence: fusionCard.header?.confidence,
+          executionData: fusionCard.execution ? {
+            entryPrice: fusionCard.execution.entry_price,
+            targetPrice: fusionCard.execution.target_price,
+            stopLoss: fusionCard.execution.stop_loss
+          } : null
+        }
       });
       return null;
     }
@@ -790,10 +1082,27 @@ export class TradeCardGenerator {
    * Store daily cards in database
    */
   private async storeDailyCards(dailyCards: DailyTradeCards): Promise<void> {
-    if (!this.database) return;
+    loggerUtils.aiLogger.info('💾 Starting storeDailyCards process', {
+      date: dailyCards.date,
+      cardsToStore: dailyCards.cards.length,
+      databaseExists: !!this.database
+    });
+
+    if (!this.database) {
+      loggerUtils.aiLogger.error('❌ Database not available for storing cards', {
+        date: dailyCards.date
+      });
+      return;
+    }
 
     try {
-      // Store daily summary
+      // STEP 1: Store daily summary
+      loggerUtils.aiLogger.info('🔄 Step 1: Storing daily summary', {
+        date: dailyCards.date,
+        totalCards: dailyCards.summary.totalCards,
+        avgConfidence: dailyCards.summary.averageConfidence
+      });
+
       await this.database.run(`
         INSERT OR REPLACE INTO daily_card_sets (
           date, card_count, high_confidence_count, average_confidence,
@@ -809,48 +1118,88 @@ export class TradeCardGenerator {
         dailyCards.marketEnvironment.opportunityCount,
       ]);
 
-      // Store individual cards
-      for (const card of dailyCards.cards) {
-        await this.database.run(`
-          INSERT OR REPLACE INTO trade_cards (
-            id, category, symbol, strategy_type, trade_direction,
-            entry_price, target_price, stop_price, confidence_score,
-            risk_grade, max_position_size, time_to_hold_optimal,
-            main_thesis, primary_risks, chart_data, date_generated,
-            source_fusion_data, validation_data, market_context
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
-          card.id,
-          card.category,
-          card.symbol,
-          card.strategyType,
-          card.tradeDirection,
-          card.entry.price,
-          card.exits.primary.price,
-          card.exits.stop.price,
-          card.confidenceScore,
-          card.riskAssessment.riskGrade,
-          card.riskAssessment.maxPositionSize,
-          card.timeToHold.optimal,
-          card.whyThisTrade.mainThesis,
-          JSON.stringify(card.whatCouldGoWrong.primaryRisks),
-          JSON.stringify(card.chartData),
-          dailyCards.date,
-          JSON.stringify(card.sourceData.fusionTradeCard),
-          JSON.stringify(card.sourceData.validationResult),
-          JSON.stringify(card.sourceData.marketData),
-        ]);
+      loggerUtils.aiLogger.info('✅ Step 1 complete: Daily summary stored', {
+        date: dailyCards.date
+      });
+
+      // STEP 2: Store individual cards
+      loggerUtils.aiLogger.info('🔄 Step 2: Storing individual cards', {
+        date: dailyCards.date,
+        cardCount: dailyCards.cards.length
+      });
+
+      for (let i = 0; i < dailyCards.cards.length; i++) {
+        const card = dailyCards.cards[i];
+        try {
+          loggerUtils.aiLogger.info(`🔄 Storing card ${i + 1}/${dailyCards.cards.length}`, {
+            cardIndex: i,
+            cardId: card.id,
+            cardSymbol: card.symbol
+          });
+
+          await this.database.run(`
+            INSERT OR REPLACE INTO trade_cards (
+              id, category, symbol, strategy_type, trade_direction,
+              entry_price, target_price, stop_price, confidence_score,
+              risk_grade, max_position_size, time_to_hold_optimal,
+              main_thesis, primary_risks, chart_data, date_generated,
+              source_fusion_data, validation_data, market_context
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            card.id,
+            card.category,
+            card.symbol,
+            card.strategyType,
+            card.tradeDirection,
+            card.entry.price,
+            card.exits.primary.price,
+            card.exits.stop.price,
+            card.confidenceScore,
+            card.riskAssessment.riskGrade,
+            card.riskAssessment.maxPositionSize,
+            card.timeToHold.optimal,
+            card.whyThisTrade.mainThesis,
+            JSON.stringify(card.whatCouldGoWrong.primaryRisks),
+            JSON.stringify(card.chartData),
+            dailyCards.date,
+            JSON.stringify(card.sourceData.fusionTradeCard),
+            JSON.stringify(card.sourceData.validationResult),
+            JSON.stringify(card.sourceData.marketData),
+          ]);
+
+          loggerUtils.aiLogger.info(`✅ Card ${i + 1} stored successfully`, {
+            cardIndex: i,
+            cardSymbol: card.symbol
+          });
+        } catch (cardError) {
+          loggerUtils.aiLogger.error(`❌ Failed to store card ${i + 1}`, {
+            cardIndex: i,
+            cardId: card.id,
+            cardSymbol: card.symbol,
+            error: (cardError as Error).message
+          });
+        }
       }
 
-      loggerUtils.aiLogger.info('Daily trade cards stored in database', {
+      loggerUtils.aiLogger.info('✅ storeDailyCards process completed successfully', {
         date: dailyCards.date,
-        cardCount: dailyCards.cards.length,
+        totalCardsStored: dailyCards.cards.length,
+        summaryStored: true
       });
     } catch (error) {
-      loggerUtils.aiLogger.error('Failed to store daily trade cards', {
+      loggerUtils.aiLogger.error('❌ FAILED to store daily trade cards', {
         date: dailyCards.date,
-        error: (error as Error).message,
+        error: {
+          message: (error as Error).message,
+          stack: (error as Error).stack,
+          name: (error as Error).name
+        },
+        databaseState: {
+          exists: !!this.database,
+          type: this.database ? typeof this.database : 'undefined'
+        }
       });
+      throw error; // Re-throw to ensure the error propagates
     }
   }
 
@@ -1197,6 +1546,50 @@ export class TradeCardGenerator {
   /**
    * Cleanup method
    */
+  async getLatestTradeCards(limit: number = 20): Promise<any[]> {
+    try {
+      const cards = await this.database.all(`
+        SELECT * FROM trade_cards 
+        WHERE created_at >= datetime('now', '-7 days')
+        ORDER BY created_at DESC, confidence_score DESC
+        LIMIT ?
+      `, [limit]);
+
+      return cards.map(card => ({
+        id: card.id,
+        category: card.category,
+        timestamp: new Date(card.created_at).getTime(),
+        symbol: card.symbol,
+        confidence: card.confidence_score,
+        strategyType: card.strategy_type,
+        entry: { 
+          price: card.entry_price, 
+          timing: 'Market open',
+          conditions: []
+        },
+        exits: {
+          primary: { price: card.target_price, reasoning: 'Target price' },
+          stop: { price: card.stop_price, reasoning: 'Stop loss' }
+        },
+        whyThisTrade: {
+          mainThesis: card.main_thesis,
+          keyPoints: [],
+          catalysts: []
+        },
+        chartReference: JSON.parse(card.chart_data || '{}'),
+        timeToHold: { optimal: card.time_to_hold_optimal },
+        riskProfile: { grade: card.risk_grade },
+        validation: JSON.parse(card.validation_data || '{}'),
+        metadata: JSON.parse(card.source_fusion_data || '{}')
+      }));
+    } catch (error) {
+      loggerUtils.aiLogger.error('Error fetching latest trade cards', {
+        error: (error as Error).message,
+      });
+      return [];
+    }
+  }
+
   async cleanup(): Promise<void> {
     if (this.database) {
       await this.database.close();

@@ -63,6 +63,56 @@
                             <h4>Last Execution: <%= pipelineStatus.id %></h4>
                             <div class="status-badge"><%= pipelineStatus.phase %></div>
                         </div>
+                        
+                        <!-- Data Quality Status -->
+                        <% if (pipelineStatus.dataQuality) { %>
+                            <div class="data-quality-status">
+                                <h5>Data Quality Report</h5>
+                                <div class="quality-metrics">
+                                    <div class="metric">
+                                        <span class="label">Overall Score:</span>
+                                        <span class="value <%= pipelineStatus.dataQuality.overallScore >= 70 ? 'success' : pipelineStatus.dataQuality.overallScore >= 40 ? 'warning' : 'error' %>">
+                                            <%= pipelineStatus.dataQuality.overallScore %>%
+                                        </span>
+                                    </div>
+                                    <div class="metric">
+                                        <span class="label">Sources Used:</span>
+                                        <span class="value"><%= pipelineStatus.dataQuality.sourcesEvaluated %></span>
+                                    </div>
+                                    <div class="metric">
+                                        <span class="label">Data Issues:</span>
+                                        <span class="value <%= pipelineStatus.dataQuality.totalIssues > 0 ? 'warning' : 'success' %>">
+                                            <%= pipelineStatus.dataQuality.totalIssues %>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <% if (pipelineStatus.dataQuality.overallScore < 60) { %>
+                                    <div class="quality-warning">
+                                        <div class="quality-warning-icon"></div>
+                                        Data quality is below recommended levels. Results may include fallback or simulated data.
+                                    </div>
+                                <% } %>
+                                
+                                <% if (pipelineStatus.dataQuality.sourceBreakdown) { %>
+                                    <div class="data-sources-summary">
+                                        <% Object.entries(pipelineStatus.dataQuality.sourceBreakdown).forEach(([source, info]) => { %>
+                                            <% 
+                                            let qualityClass = 'live';
+                                            if (source.includes('backup') || source.includes('fallback')) qualityClass = 'fallback';
+                                            if (source.includes('generated')) qualityClass = 'generated';
+                                            if (source.includes('cache')) qualityClass = 'cached';
+                                            %>
+                                            <span class="data-quality-indicator data-quality-<%= qualityClass %>">
+                                                <div class="data-quality-icon"></div>
+                                                <%= source %> (<%= info.avgReliability %>%)
+                                            </span>
+                                        <% }) %>
+                                    </div>
+                                <% } %>
+                            </div>
+                        <% } %>
+                        
                         <div class="status-metrics">
                             <div class="metric">
                                 <span class="label">Symbols Processed:</span>

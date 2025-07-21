@@ -2,10 +2,20 @@
  * Base API client with comprehensive retry logic, rate limiting, and error handling
  */
 
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { logHelpers, loggerUtils } from '../config/logger.js';
 import { cacheUtils } from '../config/redis.js';
 import { createHash } from 'crypto';
+
+// Extend Axios config to include metadata
+declare module 'axios' {
+  interface InternalAxiosRequestConfig {
+    metadata?: {
+      requestId: string;
+      startTime: number;
+    };
+  }
+}
 
 export interface RetryConfig {
   maxRetries: number;
@@ -190,6 +200,7 @@ export abstract class BaseClient {
       skipCache?: boolean;
       priority?: 'high' | 'normal' | 'low';
       timeout?: number;
+      parseHtml?: boolean;
     }
   ): Promise<T> {
     const cacheKey = this.generateCacheKey('GET', endpoint, params);

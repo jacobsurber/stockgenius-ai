@@ -7,6 +7,9 @@ import { CollectedData, CongressionalTrade, CollectorConfig } from './types.js';
 import { loggerUtils } from '../config/logger.js';
 import { DataHub } from '../api/DataHub.js';
 
+// Export the data type for use in other modules
+export type CongressionalTradingData = CongressionalTrade;
+
 export class CongressionalTradingCollector extends BaseCollector {
   private dataHub: DataHub;
   
@@ -304,11 +307,12 @@ export class CongressionalTradingCollector extends BaseCollector {
   private async checkEarningsProximity(symbol: string, tradeDate: Date): Promise<number> {
     try {
       // Get recent earnings data
-      const earnings = await this.dataHub.finnhubClient.getEarningsCalendar(
-        symbol, 
-        new Date(tradeDate.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        new Date(tradeDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-      );
+      // Skip earnings check since Finnhub is disabled
+      // const earnings = await this.dataHub.finnhubClient.getEarningsCalendar(
+      //   new Date(tradeDate.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      //   new Date(tradeDate.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      // );
+      const earnings = null;
       
       if (!earnings?.earningsCalendar?.length) return 0;
       
@@ -393,8 +397,10 @@ export class CongressionalTradingCollector extends BaseCollector {
       let score = 0;
       
       // Get company information to determine industry
-      const companyInfo = await this.dataHub.finnhubClient.getCompanyProfile(symbol);
-      const industry = companyInfo?.finnhubIndustry || '';
+      // Skip company profile check since Finnhub is disabled
+      // const companyInfo = await this.dataHub.finnhubClient.getCompanyProfile(symbol);
+      // const industry = companyInfo?.finnhubIndustry || '';
+      const industry = '';
       
       // Check if representative serves on relevant committees
       const relevantCommittees = this.getRelevantCommittees(industry);

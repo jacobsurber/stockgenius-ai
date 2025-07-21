@@ -12,10 +12,12 @@ import { YahooFinanceClient } from './clients/YahooFinanceClient.js';
 import { GoogleTrendsClient } from './clients/GoogleTrendsClient.js';
 import { SECEdgarClient } from './clients/SECEdgarClient.js';
 import { NewsScraperClient } from './clients/NewsScraperClient.js';
+import { BackupDataClient } from './clients/BackupDataClient.js';
 import { processingService } from '../preprocessing/ProcessingService.js';
 import { ProcessingResult, ProcessedDataPoint } from '../types/data.js';
 import { logHelpers, loggerUtils } from '../config/logger.js';
 import { cacheUtils } from '../config/redis.js';
+import DataQualityValidator, { DataQualityMetrics } from '../core/DataQualityValidator.js';
 import env from '../config/env.js';
 
 export interface DataRequest {
@@ -68,11 +70,62 @@ export class DataHub {
   private healthStatus: Map<string, boolean> = new Map();
   private lastHealthCheck: number = 0;
   private healthCheckInterval: number = 300000; // 5 minutes
+  private qualityValidator: DataQualityValidator = new DataQualityValidator();
+  private qualityMetrics: Map<string, DataQualityMetrics[]> = new Map();
+  
+  // Public client accessors
+  public get finnhubClient(): FinnhubClient | null {
+    return this.clients.get('finnhub') as FinnhubClient || null;
+  }
+  
+  public get polygonClient(): PolygonClient | null {
+    return this.clients.get('polygon') as PolygonClient || null;
+  }
+  
+  public get alphaVantageClient(): AlphaVantageClient | null {
+    return this.clients.get('alphavantage') as AlphaVantageClient || null;
+  }
+  
+  public get quiverClient(): QuiverClient | null {
+    return this.clients.get('quiver') as QuiverClient || null;
+  }
+  
+  public get yahooFinanceClient(): YahooFinanceClient | null {
+    return this.clients.get('yahoo') as YahooFinanceClient || null;
+  }
+  
+  public get newsScraperClient(): NewsScraperClient | null {
+    return this.clients.get('newsscraper') as NewsScraperClient || null;
+  }
+  
+  public get secEdgarClient(): SECEdgarClient | null {
+    return this.clients.get('secedgar') as SECEdgarClient || null;
+  }
+  
+  public get googleTrendsClient(): GoogleTrendsClient | null {
+    return this.clients.get('trends') as GoogleTrendsClient || null;
+  }
+  
+  public get backupDataClient(): BackupDataClient | null {
+    return this.clients.get('backup') as BackupDataClient || null;
+  }
 
   constructor() {
     this.initializeClients();
     this.setupSourcePriorities();
     this.startHealthMonitoring();
+  }
+  
+  /**
+   * Public initialization method for external use
+   */
+  public async initialize(): Promise<void> {
+    await this.initializeClients();
+    
+    // Initialize the processing service
+    await processingService.initialize();
+    
+    loggerUtils.apiLogger.info('DataHub initialized successfully');
   }
 
   /**
@@ -83,6 +136,8 @@ export class DataHub {
 
     try {
       // Paid API clients
+      // Temporarily disable Finnhub due to SSL errors
+      /*
       if (env.FINNHUB_API_KEY) {
         this.clients.set('finnhub', new FinnhubClient({
           name: 'Finnhub',
@@ -115,6 +170,7 @@ export class DataHub {
           },
         }));
       }
+      */
 
       if (env.POLYGON_API_KEY) {
         this.clients.set('polygon', new PolygonClient({
@@ -153,7 +209,7 @@ export class DataHub {
         this.clients.set('alphavantage', new AlphaVantageClient({
           name: 'AlphaVantage',
           baseURL: 'https://www.alphavantage.co/query',
-          timeout: 20000,
+          timeout: 5000, // Reduced from 20000ms for faster pipeline execution
           headers: {},
           retry: {
             maxRetries: 2,
@@ -299,7 +355,7 @@ export class DataHub {
       this.clients.set('newsscraper', new NewsScraperClient({
         name: 'NewsScraper',
         baseURL: '', // Multiple URLs
-        timeout: 20000,
+        timeout: 15000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (compatible; StockGenius/1.0)',
         },
@@ -324,6 +380,33 @@ export class DataHub {
         },
       }));
 
+      // Always add backup data client as last resort
+      this.clients.set('backup', new BackupDataClient({
+        name: 'BackupData',
+        baseURL: '', // Multiple URLs
+        timeout: 10000,
+        headers: {},
+        retry: {
+          maxRetries: 1,
+          baseDelay: 1000,
+          maxDelay: 5000,
+          backoffMultiplier: 1.5,
+          retryableStatusCodes: [429, 500, 502, 503, 504],
+        },
+        rateLimit: {
+          requestsPerSecond: 1,
+          requestsPerMinute: 60,
+          requestsPerHour: 3600,
+          burstLimit: 3,
+          queueLimit: 50,
+        },
+        cache: {
+          defaultTTL: 900, // 15 minutes for backup data
+          maxSize: 200,
+          keyPrefix: 'backup',
+        },
+      }));
+
       loggerUtils.apiLogger.info('DataHub clients initialized', {
         clientCount: this.clients.size,
         clients: Array.from(this.clients.keys()),
@@ -345,19 +428,19 @@ export class DataHub {
     this.sourcePriorities.set('quote', {
       primary: ['finnhub', 'polygon'],
       fallback: ['alphavantage'],
-      free: ['yahoo'],
+      free: ['yahoo', 'backup'],
     });
 
     this.sourcePriorities.set('profile', {
       primary: ['finnhub', 'alphavantage'],
       fallback: ['polygon'],
-      free: ['yahoo'],
+      free: ['yahoo', 'backup'],
     });
 
     this.sourcePriorities.set('news', {
       primary: ['finnhub', 'polygon'],
       fallback: ['alphavantage'],
-      free: ['newsscraper', 'yahoo'],
+      free: ['newsscraper', 'yahoo', 'backup'],
     });
 
     this.sourcePriorities.set('financials', {
@@ -411,7 +494,7 @@ export class DataHub {
     this.sourcePriorities.set('sentiment', {
       primary: ['quiver'],
       fallback: [],
-      free: ['newsscraper', 'trends'],
+      free: ['newsscraper', 'trends', 'backup'],
     });
   }
 
@@ -543,8 +626,30 @@ export class DataHub {
           continue;
         }
 
+        // Validate data quality
+        const qualityMetrics = this.validateDataQuality(rawData, dataType, symbol, source);
+        this.storeQualityMetrics(symbol, qualityMetrics);
+        
+        // Update source reliability based on quality
+        this.qualityValidator.updateSourceReliability(source, qualityMetrics.reliability > 50);
+        
+        // Skip if data quality is too poor (unless it's the last option)
+        if (qualityMetrics.reliability < 30 && sourcesToTry.indexOf(source) < sourcesToTry.length - 1) {
+          loggerUtils.apiLogger.warn('Data quality too poor, trying next source', {
+            source,
+            dataType,
+            symbol,
+            reliability: qualityMetrics.reliability,
+            issues: qualityMetrics.issues,
+          });
+          continue;
+        }
+
         // Process the raw data
         const processedData = await this.processData(rawData, dataType, symbol, options.processingOptions);
+        
+        // Add quality info to metadata
+        processedData.quality = qualityMetrics;
 
         return {
           processedData,
@@ -552,6 +657,7 @@ export class DataHub {
           cacheInfo: {
             cached: false,
             ttl: client.constructor.name.includes('cache') ? 'cached' : 'fresh',
+            quality: qualityMetrics.reliability,
           },
         };
 
@@ -595,6 +701,8 @@ export class DataHub {
           return await (client as AlphaVantageClient).getGlobalQuote(symbol);
         } else if (clientName.includes('yahoo')) {
           return await (client as YahooFinanceClient).getQuote(symbol);
+        } else if (clientName.includes('backup')) {
+          return await (client as BackupDataClient).getStockData(symbol);
         }
         break;
 
@@ -613,6 +721,8 @@ export class DataHub {
           return await (client as FinnhubClient).getCompanyNews(symbol);
         } else if (clientName.includes('newsscraper')) {
           return await (client as NewsScraperClient).scrapeSymbolNews(symbol);
+        } else if (clientName.includes('backup')) {
+          return await (client as BackupDataClient).getNewsData(symbol);
         }
         break;
 
@@ -621,6 +731,8 @@ export class DataHub {
           return await (client as AlphaVantageClient).getIncomeStatement(symbol);
         } else if (clientName.includes('sec')) {
           return await (client as SECEdgarClient).getCompanyFilings(symbol, ['10-K', '10-Q']);
+        } else if (clientName.includes('backup')) {
+          return await (client as BackupDataClient).getFinancialMetrics(symbol);
         }
         break;
 
@@ -757,12 +869,16 @@ export class DataHub {
    * Start health monitoring for all clients
    */
   private startHealthMonitoring(): void {
-    // Initial health check
-    this.performHealthCheck();
+    // Initial health check (non-blocking - run in background)
+    this.performHealthCheck().catch(error => {
+      loggerUtils.apiLogger.warn('Initial health check failed', { error: error.message });
+    });
 
     // Schedule regular health checks
     setInterval(() => {
-      this.performHealthCheck();
+      this.performHealthCheck().catch(error => {
+        loggerUtils.apiLogger.warn('Scheduled health check failed', { error: error.message });
+      });
     }, this.healthCheckInterval);
   }
 
@@ -865,6 +981,96 @@ export class DataHub {
       lastHealthCheck: this.lastHealthCheck,
       totalClients: this.clients.size,
     };
+  }
+
+  /**
+   * Validate data quality using the quality validator
+   */
+  private validateDataQuality(
+    data: any,
+    dataType: DataType,
+    symbol: string,
+    source: string
+  ): DataQualityMetrics {
+    try {
+      switch (dataType) {
+        case 'quote':
+          return this.qualityValidator.validateStockData(data, symbol);
+        case 'news':
+          return this.qualityValidator.validateNewsData(Array.isArray(data) ? data : [data]);
+        case 'financials':
+          return this.qualityValidator.validateFinancialData(data, symbol);
+        case 'trends':
+          return this.qualityValidator.validateTrendsData(data, symbol);
+        default:
+          // Generic validation for other data types
+          return {
+            source,
+            timestamp: new Date().toISOString(),
+            completeness: data ? 80 : 0,
+            accuracy: 75, // Default reasonable accuracy
+            freshness: 90,
+            consistency: 80,
+            reliability: data ? 75 : 0,
+            confidence: 70,
+            issues: data ? [] : ['No data provided'],
+          };
+      }
+    } catch (error) {
+      loggerUtils.apiLogger.warn('Data quality validation failed', {
+        dataType,
+        symbol,
+        source,
+        error: error.message,
+      });
+      
+      return {
+        source,
+        timestamp: new Date().toISOString(),
+        completeness: 0,
+        accuracy: 0,
+        freshness: 0,
+        consistency: 0,
+        reliability: 0,
+        confidence: 0,
+        issues: ['Quality validation failed'],
+      };
+    }
+  }
+
+  /**
+   * Store quality metrics for analysis
+   */
+  private storeQualityMetrics(symbol: string, metrics: DataQualityMetrics): void {
+    if (!this.qualityMetrics.has(symbol)) {
+      this.qualityMetrics.set(symbol, []);
+    }
+    
+    const symbolMetrics = this.qualityMetrics.get(symbol)!;
+    symbolMetrics.push(metrics);
+    
+    // Keep only last 50 metrics per symbol
+    if (symbolMetrics.length > 50) {
+      symbolMetrics.splice(0, symbolMetrics.length - 50);
+    }
+  }
+
+  /**
+   * Get data quality report
+   */
+  getDataQualityReport(symbol?: string): any {
+    if (symbol) {
+      const metrics = this.qualityMetrics.get(symbol) || [];
+      return this.qualityValidator.getQualityReport(metrics);
+    }
+    
+    // Aggregate all metrics
+    const allMetrics: DataQualityMetrics[] = [];
+    for (const symbolMetrics of this.qualityMetrics.values()) {
+      allMetrics.push(...symbolMetrics);
+    }
+    
+    return this.qualityValidator.getQualityReport(allMetrics);
   }
 
   /**

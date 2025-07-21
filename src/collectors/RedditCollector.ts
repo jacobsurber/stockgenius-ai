@@ -211,7 +211,7 @@ export class RedditCollector extends BaseCollector {
    */
   private async processRedditPost(post: any, subreddit: string): Promise<RedditPostData> {
     const content = `${post.title} ${post.selftext || ''}`;
-    const sentiment = await this.analyzeSentiment(content);
+    const sentimentResult = await this.analyzeSentiment(content);
     const symbols = this.extractStockSymbols(content);
     
     // Calculate confidence based on engagement and content quality
@@ -222,6 +222,18 @@ export class RedditCollector extends BaseCollector {
       contentLength: content.length,
       hasSymbols: symbols.length > 0,
     });
+
+    // Convert sentiment result to SentimentData format
+    const sentiment = {
+      sentiment: sentimentResult.sentiment,
+      score: sentimentResult.score,
+      magnitude: sentimentResult.magnitude,
+      keywords: sentimentResult.keywords,
+      timestamp: Date.now(),
+      source: 'reddit',
+      confidence: confidence,
+      metadata: { subreddit, postId: post.id }
+    };
 
     return {
       postId: post.id,

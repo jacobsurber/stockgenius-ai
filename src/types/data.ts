@@ -237,6 +237,7 @@ export interface ProcessingResult {
   data?: ProcessedDataPoint[];
   errors?: string[];
   warnings?: string[];
+  quality?: any; // Data quality metrics
   statistics: {
     totalInputs: number;
     successfullyProcessed: number;

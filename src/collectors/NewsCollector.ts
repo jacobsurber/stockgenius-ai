@@ -3,9 +3,12 @@
  */
 
 import { BaseCollector } from './BaseCollector.js';
-import { CollectedData, ProcessedNewsItem, CollectorConfig } from './types.js';
+import { CollectedData, ProcessedNewsItem, CollectorConfig, NewsData } from './types.js';
 import { loggerUtils } from '../config/logger.js';
 import { DataHub } from '../api/DataHub.js';
+
+// Re-export NewsData for use in other modules
+export type { NewsData };
 
 export class NewsCollector extends BaseCollector {
   private dataHub: DataHub;
@@ -107,10 +110,11 @@ export class NewsCollector extends BaseCollector {
       // Get news from multiple sources
       const sources = await Promise.allSettled([
         this.dataHub.newsScraperClient.getNewsForSymbol(symbol, Math.ceil(limit * 0.4)),
-        this.dataHub.finnhubClient.getCompanyNews(symbol, 
-          new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          new Date().toISOString().split('T')[0]
-        ),
+        // Finnhub disabled due to SSL errors
+        // this.dataHub.finnhubClient.getCompanyNews(symbol, 
+        //   new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        //   new Date().toISOString().split('T')[0]
+        // ),
         this.dataHub.alphaVantageClient.getNewsSentiment(symbol, undefined, undefined, undefined, 'LATEST', Math.ceil(limit * 0.3)),
         this.dataHub.polygonClient.getTickerNews(symbol, undefined, 'desc', Math.ceil(limit * 0.3)),
       ]);
@@ -329,7 +333,26 @@ export class NewsCollector extends BaseCollector {
       const content = `${newsItem.title} ${newsItem.summary}`;
       
       // Analyze sentiment
-      const sentiment = await this.analyzeSentiment(content);
+      const sentimentResult = await this.dataHub.newsScraperClient?.analyzeSentiment(content);
+      const sentiment = sentimentResult ? {
+        sentiment: sentimentResult.sentiment as 'positive' | 'negative' | 'neutral',
+        score: sentimentResult.score,
+        magnitude: Math.abs(sentimentResult.score),
+        keywords: [],
+        timestamp: Date.now(),
+        source: 'NewsScraperClient',
+        confidence: 0.8,
+        metadata: {}
+      } : {
+        sentiment: 'neutral' as 'positive' | 'negative' | 'neutral',
+        score: 0,
+        magnitude: 0,
+        keywords: [],
+        timestamp: Date.now(),
+        source: 'fallback',
+        confidence: 0.5,
+        metadata: {}
+      };
       
       // Calculate market impact
       const marketImpact = this.calculateMarketImpact(newsItem, sentiment);
@@ -356,8 +379,10 @@ export class NewsCollector extends BaseCollector {
       });
 
       return {
+        id: `${newsItem.source}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
         title: newsItem.title,
         summary: newsItem.summary,
+        content: content,
         url: newsItem.url,
         category: this.categorizeNews(content),
         sentiment,
@@ -800,6 +825,43 @@ export class NewsCollector extends BaseCollector {
       item.timestamp <= windowEnd &&
       item.marketImpact > 0.5
     ).sort((a, b) => b.marketImpact - a.marketImpact);
+  }
+
+  /**
+   * Extract stock symbols from text content
+   */
+  protected extractStockSymbols(content: string): string[] {
+    const symbolPattern = /\b[A-Z]{1,5}\b/g;
+    const matches = content.match(symbolPattern);
+    if (!matches) return [];
+    return matches.filter(match => match.length >= 2 && match.length <= 5);
+  }
+
+  /**
+   * Extract financial keywords from content
+   */
+  protected extractFinancialKeywords(content: string): string[] {
+    const financialTerms = ['earnings', 'revenue', 'profit', 'dividend', 'acquisition', 'merger', 'ipo', 'eps', 'guidance', 'buyback'];
+    const contentLower = content.toLowerCase();
+    return financialTerms.filter(term => contentLower.includes(term));
+  }
+
+  /**
+   * Normalize timestamp from various formats
+   */
+  protected normalizeTimestamp(publishedAt: string): number {
+    try {
+      return new Date(publishedAt).getTime();
+    } catch {
+      return Date.now();
+    }
+  }
+
+  /**
+   * Clamp value between min and max
+   */
+  protected clamp(value: number, min: number, max: number): number {
+    return Math.min(Math.max(value, min), max);
   }
 }
 

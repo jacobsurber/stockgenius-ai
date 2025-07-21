@@ -1,0 +1,37 @@
+{
+  "name": "stockgenius",
+  "version": "1.0.0",
+  "description": "AI-Powered Stock Analysis Platform",
+  "main": "dist/web/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:full",
+    "build:full": "tsc && node scripts/copy-assets.js",
+    "start": "node dist/web/index.js",
+    "dev": "nodemon --exec node --loader ts-node/esm src/web/index.ts",
+    "prebuild": "node scripts/generate-build-info.js",
+    "postbuild": "echo 'Build completed successfully'",
+    "vercel-build": "npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "ejs": "^3.1.9",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "openai": "^4.20.1",
+    "winston": "^3.11.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.17.10",
+    "@types/node": "^20.8.0",
+    "typescript": "^5.2.2",
+    "nodemon": "^3.0.1",
+    "ts-node": "^10.9.1"
+  }
+}

@@ -3,9 +3,12 @@
  */
 
 import { BaseCollector } from './BaseCollector.js';
-import { CollectedData, InsiderTransaction, CollectorConfig } from './types.js';
+import { CollectedData, InsiderTransaction, CollectorConfig, TradingData } from './types.js';
 import { loggerUtils } from '../config/logger.js';
 import { DataHub } from '../api/DataHub.js';
+
+// Export the data type for use in other modules
+export type InsiderTradingData = InsiderTransaction;
 
 export class InsiderTradingCollector extends BaseCollector {
   private dataHub: DataHub;

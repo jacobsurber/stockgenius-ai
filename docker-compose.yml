@@ -57,14 +57,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: stockgenius:latest
     container_name: stockgenius-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "8080:8080"
     environment:
       - NODE_ENV=production
+      - WEB_PORT=8080
+      - WEB_USERNAME=admin
+      - WEB_PASSWORD=stockgenius2024
+      - SESSION_SECRET=${SESSION_SECRET:-your-secret-key-change-in-production}
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=/app/data/stockgenius.db
+      # API Keys
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - ALPHAVANTAGE_API_KEY=${ALPHAVANTAGE_API_KEY}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -73,6 +83,12 @@ services:
       - stockgenius-network
     depends_on:
       - redis
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     profiles:
       - production
 

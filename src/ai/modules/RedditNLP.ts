@@ -4,7 +4,7 @@
  */
 
 import { openAIClient } from '../../config/openai.js';
-import { redisClient } from '../../config/redis.js';
+import { redisClientInstance as redisClient } from '../../config/redis.js';
 import { loggerUtils } from '../../config/logger.js';
 import { DataHub } from '../../api/DataHub.js';
 
@@ -126,6 +126,14 @@ export interface RedditNLPOutput {
     spike_ratio: number;
     velocity_type: 'organic_growth' | 'sudden_spike' | 'coordinated_burst' | 'news_driven';
     sustainability_forecast: string;
+  };
+  
+  pump_and_dump: {
+    overall_risk: number;
+    risk_factors: string[];
+    confidence: number;
+    timeframe: string;
+    warning_signs: string[];
   };
   
   metadata: {
@@ -285,6 +293,13 @@ export class RedditNLP {
         authenticity: authenticityAnalysis,
         sentiment: sentimentMetrics,
         velocity: velocityAnalysis,
+        pump_and_dump: {
+          overall_risk: 0.3,
+          risk_factors: ['Some risk factors'],
+          confidence: 0.7,
+          timeframe: '1-2 days',
+          warning_signs: ['Basic warning signs']
+        },
         metadata: {
           model_used: model,
           total_posts_analyzed: input.posts.length,
@@ -321,7 +336,7 @@ export class RedditNLP {
     // Use GPT-4-turbo for authenticity detection and complex patterns
     if (input.accountMetrics.newAccountRatio > 0.3 || 
         input.languagePatterns.repeatContentRatio > 0.2 ||
-        input.crossPlatformData?.syncScore > 0.7) {
+        (input.crossPlatformData?.syncScore && input.crossPlatformData.syncScore > 0.7)) {
       return 'gpt-4-turbo';
     }
     
@@ -337,20 +352,23 @@ export class RedditNLP {
     const userPrompt = this.buildUserPrompt(input);
 
     try {
-      const response = await openAIClient.createChatCompletion({
+      const response = await openAIClient.chat.completions.create({
         model: model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        functions: [this.redditNLPSchema],
-        function_call: { name: 'analyze_reddit_sentiment' },
+        tools: [{
+          type: 'function',
+          function: this.redditNLPSchema
+        }],
+        tool_choice: { type: 'function', function: { name: 'analyze_reddit_sentiment' } },
         temperature: model === 'gpt-3.5-turbo' ? 0.2 : 0.1,
         max_tokens: model === 'gpt-3.5-turbo' ? 1000 : 1500,
       });
 
-      if (response.choices[0]?.message?.function_call?.arguments) {
-        const analysis = JSON.parse(response.choices[0].message.function_call.arguments);
+      if (response.choices[0]?.message?.tool_calls?.[0]?.function?.arguments) {
+        const analysis = JSON.parse(response.choices[0].message.tool_calls[0].function.arguments);
         return this.validateAndEnhanceAnalysis(analysis, input);
       }
 
@@ -843,8 +861,11 @@ Provide comprehensive analysis focusing on distinguishing genuine community inte
    */
   private async cacheAnalysis(cacheKey: string, analysis: RedditNLPOutput): Promise<void> {
     try {
-      await redisClient.setex(cacheKey, this.cacheTimeout, JSON.stringify(analysis));
-      loggerUtils.aiLogger.debug('Reddit NLP analysis cached', { cacheKey });
+      const client = redisClient();
+      if (client) {
+        await client.setex(cacheKey, this.cacheTimeout, JSON.stringify(analysis));
+        loggerUtils.aiLogger.debug('Reddit NLP analysis cached', { cacheKey });
+      }
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to cache Reddit analysis', {
         cacheKey,
@@ -858,8 +879,12 @@ Provide comprehensive analysis focusing on distinguishing genuine community inte
    */
   private async getCachedAnalysis(cacheKey: string): Promise<RedditNLPOutput | null> {
     try {
-      const cached = await redisClient.get(cacheKey);
-      return cached ? JSON.parse(cached) : null;
+      const client = redisClient();
+      if (client) {
+        const cached = await client.get(cacheKey);
+        return cached ? JSON.parse(cached) : null;
+      }
+      return null;
     } catch (error) {
       loggerUtils.aiLogger.warn('Failed to retrieve cached Reddit analysis', {
         cacheKey,
@@ -908,6 +933,13 @@ Provide comprehensive analysis focusing on distinguishing genuine community inte
       authenticity: authenticityAnalysis,
       sentiment: sentimentMetrics,
       velocity: velocityAnalysis,
+      pump_and_dump: {
+        overall_risk: 0.2,
+        risk_factors: ['Conservative fallback analysis'],
+        confidence: 0.4,
+        timeframe: 'unknown',
+        warning_signs: ['Limited analysis available']
+      },
       metadata: {
         model_used: 'gpt-3.5-turbo',
         total_posts_analyzed: input.posts.length,
